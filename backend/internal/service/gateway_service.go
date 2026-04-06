@@ -8656,6 +8656,13 @@ func (s *GatewayService) initDebugGatewayBodyFile(path string) {
 		path = debugGatewayBodyDefaultFilename
 	}
 
+	// Reject path traversal sequences
+	path = filepath.Clean(path)
+	if strings.Contains(path, "..") {
+		slog.Error("rejected debug log path with traversal sequence", "path", path)
+		return
+	}
+
 	// 如果 path 指向一个已存在的目录，自动追加默认文件名
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		path = filepath.Join(path, debugGatewayBodyDefaultFilename)
