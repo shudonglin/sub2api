@@ -2,20 +2,31 @@
 package routes
 
 import (
+	"time"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/middleware"
+	servermiddleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 // RegisterAdminRoutes 注册管理员路由
 func RegisterAdminRoutes(
 	v1 *gin.RouterGroup,
 	h *handler.Handlers,
-	adminAuth middleware.AdminAuthMiddleware,
+	adminAuth servermiddleware.AdminAuthMiddleware,
+	redisClient *redis.Client,
 ) {
+	// 创建管理员速率限制器
+	rateLimiter := middleware.NewRateLimiter(redisClient)
+
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
+	admin.Use(rateLimiter.LimitWithOptions("admin-api", 60, time.Minute, middleware.RateLimitOptions{
+		FailureMode: middleware.RateLimitFailClose,
+	}))
 	{
 		// 仪表盘
 		registerDashboardRoutes(admin, h)

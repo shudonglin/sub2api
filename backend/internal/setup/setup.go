@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,12 @@ func setupDefaultAdminConcurrency() int {
 		return simpleModeAdminConcurrency
 	}
 	return defaultUserConcurrency
+}
+
+// redactDSN masks the password in a PostgreSQL DSN string for safe logging.
+func redactDSN(dsn string) string {
+	re := regexp.MustCompile(`password=[^\s]+`)
+	return re.ReplaceAllString(dsn, "password=***")
 }
 
 // GetDataDir returns the data directory for storing config and lock files.

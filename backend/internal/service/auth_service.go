@@ -24,7 +24,7 @@ import (
 var (
 	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
 	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
-	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
+	ErrEmailExists             = infraerrors.Conflict("REGISTRATION_FAILED", "registration failed")
 	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
 	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
 	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")

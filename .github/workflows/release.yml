@@ -33,11 +33,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Update VERSION file
+      - name: Validate and set version
+        env:
+          TAG: ${{ github.event.inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION=${{ github.event.inputs.tag }}
-            VERSION=${VERSION#v}
+            if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "::error::Invalid tag format: $TAG (expected vX.Y.Z or vX.Y.Z-pre.N)"
+              exit 1
+            fi
+            VERSION="${TAG#v}"
           else
             VERSION=${GITHUB_REF#refs/tags/v}
           fi

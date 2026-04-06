@@ -685,6 +685,23 @@ func (h *SoraGatewayHandler) proxySoraMedia(c *gin.Context, requireSignature boo
 
 	relative := strings.TrimPrefix(cleaned, "/")
 	localPath := filepath.Join(h.soraMediaRoot, filepath.FromSlash(relative))
+
+	// Prevent path traversal attacks
+	absLocal, err := filepath.Abs(localPath)
+	if err != nil {
+		c.Status(http.StatusBadRequest)
+		return
+	}
+	absRoot, err := filepath.Abs(h.soraMediaRoot)
+	if err != nil {
+		c.Status(http.StatusInternalServerError)
+		return
+	}
+	if !strings.HasPrefix(absLocal, absRoot+string(filepath.Separator)) && absLocal != absRoot {
+		c.Status(http.StatusForbidden)
+		return
+	}
+
 	if _, err := os.Stat(localPath); err != nil {
 		if os.IsNotExist(err) {
 			c.Status(http.StatusNotFound)
