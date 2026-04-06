@@ -131,6 +131,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		BackendModeEnabled:                   settings.BackendModeEnabled,
 		EnableFingerprintUnification:         settings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:            settings.EnableMetadataPassthrough,
+		EnableMetadataUserIDAnonymization:    settings.EnableMetadataUserIDAnonymization,
+		EnablePrivacyMode:                    settings.EnablePrivacyMode,
 	})
 }
 
@@ -213,8 +215,10 @@ type UpdateSettingsRequest struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification *bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough    *bool `json:"enable_metadata_passthrough"`
+	EnableFingerprintUnification      *bool `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough         *bool `json:"enable_metadata_passthrough"`
+	EnableMetadataUserIDAnonymization *bool `json:"enable_metadata_userid_anonymization"`
+	EnablePrivacyMode                 *bool `json:"enable_privacy_mode"`
 }
 
 // UpdateSettings 更新系统设置
@@ -619,6 +623,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnableMetadataPassthrough
 		}(),
+		EnableMetadataUserIDAnonymization: func() bool {
+			if req.EnableMetadataUserIDAnonymization != nil {
+				return *req.EnableMetadataUserIDAnonymization
+			}
+			return previousSettings.EnableMetadataUserIDAnonymization
+		}(),
+		EnablePrivacyMode: func() bool {
+			if req.EnablePrivacyMode != nil {
+				return *req.EnablePrivacyMode
+			}
+			return previousSettings.EnablePrivacyMode
+		}(),
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -699,6 +715,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		BackendModeEnabled:                   updatedSettings.BackendModeEnabled,
 		EnableFingerprintUnification:         updatedSettings.EnableFingerprintUnification,
 		EnableMetadataPassthrough:            updatedSettings.EnableMetadataPassthrough,
+		EnableMetadataUserIDAnonymization:    updatedSettings.EnableMetadataUserIDAnonymization,
+		EnablePrivacyMode:                    updatedSettings.EnablePrivacyMode,
 	})
 }
 
@@ -876,6 +894,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnableMetadataPassthrough != after.EnableMetadataPassthrough {
 		changed = append(changed, "enable_metadata_passthrough")
+	}
+	if before.EnableMetadataUserIDAnonymization != after.EnableMetadataUserIDAnonymization {
+		changed = append(changed, "enable_metadata_userid_anonymization")
+	}
+	if before.EnablePrivacyMode != after.EnablePrivacyMode {
+		changed = append(changed, "enable_privacy_mode")
 	}
 	return changed
 }

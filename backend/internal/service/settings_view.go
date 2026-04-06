@@ -77,8 +77,10 @@ type SystemSettings struct {
 	BackendModeEnabled bool
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification bool // 是否统一 OAuth 账号的指纹头（默认 true）
-	EnableMetadataPassthrough    bool // 是否透传客户端原始 metadata（默认 false）
+	EnableFingerprintUnification      bool // 是否统一 OAuth 账号的指纹头（默认 true）
+	EnableMetadataPassthrough         bool // 是否透传客户端原始 metadata（默认 false）
+	EnableMetadataUserIDAnonymization bool // 是否匿名化 metadata.user_id 中的 device/account 标识（默认 false）
+	EnablePrivacyMode                 bool // 隐私强化模式：强制开启指纹统一 + metadata 匿名化 + 会话 ID 伪装（默认 true）
 }
 
 type DefaultSubscriptionSetting struct {

@@ -1109,7 +1109,7 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	return out, modelID
 }
 
-func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
+func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint, anonymize bool) string {
 	if parsed == nil || account == nil {
 		return ""
 	}
@@ -1122,9 +1122,10 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		userID = fp.ClientID
 	}
 	if userID == "" {
-		// Fall back to a random, well-formed client id so we can still satisfy
-		// Claude Code OAuth requirements when account metadata is incomplete.
 		userID = generateClientID()
+	}
+	if anonymize {
+		userID = generateClientIDFromSeed(fmt.Sprintf("metadata-device:%d", account.ID))
 	}
 
 	sessionHash := s.GenerateSessionHash(parsed)
@@ -1134,12 +1135,14 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		sessionID = generateSessionUUID(seed)
 	}
 
-	// 根据指纹 UA 版本选择输出格式
 	var uaVersion string
 	if fp != nil {
 		uaVersion = ExtractCLIVersion(fp.UserAgent)
 	}
 	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
+	if anonymize {
+		accountUUID = generateUUIDFromSeed(fmt.Sprintf("metadata-account:%d", account.ID))
+	}
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
@@ -4199,14 +4202,29 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			body = injectClaudeCodePrompt(body, parsed.System)
 		}
 
+		// Inject attribution billing header as the first system block
+		if s.identityService != nil {
+			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
+			if err == nil && fp != nil {
+				cliVersion := ExtractCLIVersion(fp.UserAgent)
+				if cliVersion == "" {
+					cliVersion = "2.1.22"
+				}
+				firstMsgText := extractFirstUserMessageText(parsed.Messages)
+				attrFingerprint := computeAttributionFingerprint(firstMsgText, cliVersion)
+				attrHeader := buildAttributionHeader(cliVersion, attrFingerprint)
+				body = injectAttributionBlock(body, attrHeader)
+			}
+		}
+
 		normalizeOpts := claudeOAuthNormalizeOptions{stripSystemCacheControl: true}
 		if s.identityService != nil {
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 			if err == nil && fp != nil {
 				// metadata 透传开启时跳过 metadata 注入
-				_, mimicMPT := s.settingService.GetGatewayForwardingSettings(ctx)
+				_, mimicMPT, mimicMUA, _ := s.settingService.GetGatewayForwardingSettings(ctx)
 				if !mimicMPT {
-					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
+					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp, mimicMUA); metadataUserID != "" {
 						normalizeOpts.injectMetadata = true
 						normalizeOpts.metadataUserID = metadataUserID
 					}
@@ -5750,9 +5768,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：应用统一指纹和metadata重写（受设置开关控制）
 	var fingerprint *Fingerprint
-	enableFP, enableMPT := true, false
+	enableFP, enableMPT, enableMUA, enablePM := true, false, false, false
 	if s.settingService != nil {
-		enableFP, enableMPT = s.settingService.GetGatewayForwardingSettings(ctx)
+		enableFP, enableMPT, enableMUA, enablePM = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	if account.IsOAuth() && s.identityService != nil {
 		// 1. 获取或创建指纹（包含随机生成的ClientID）
@@ -5771,7 +5789,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if !enableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent, enableMUA, enablePM); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
@@ -8682,9 +8700,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	// OAuth 账号：应用统一指纹和重写 userID（受设置开关控制）
 	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-	ctEnableFP, ctEnableMPT := true, false
+	ctEnableFP, ctEnableMPT, ctEnableMUA, ctEnablePM := true, false, false, false
 	if s.settingService != nil {
-		ctEnableFP, ctEnableMPT = s.settingService.GetGatewayForwardingSettings(ctx)
+		ctEnableFP, ctEnableMPT, ctEnableMUA, ctEnablePM = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
 	if account.IsOAuth() && s.identityService != nil {
@@ -8694,7 +8712,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			if !ctEnableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent, ctEnableMUA, ctEnablePM); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
