@@ -81,9 +81,11 @@ const backendModeDBTimeout = 5 * time.Second
 
 // cachedGatewayForwardingSettings 缓存网关转发行为设置（进程内缓存，60s TTL）
 type cachedGatewayForwardingSettings struct {
-	fingerprintUnification bool
-	metadataPassthrough    bool
-	expiresAt              int64 // unix nano
+	fingerprintUnification      bool
+	metadataPassthrough         bool
+	metadataUserIDAnonymization bool
+	privacyMode                 bool
+	expiresAt                   int64 // unix nano
 }
 
 var gatewayForwardingCache atomic.Value // *cachedGatewayForwardingSettings
@@ -527,6 +529,8 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// Gateway forwarding behavior
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
+	updates[SettingKeyEnableMetadataUserIDAnonymization] = strconv.FormatBool(settings.EnableMetadataUserIDAnonymization)
+	updates[SettingKeyEnablePrivacyMode] = strconv.FormatBool(settings.EnablePrivacyMode)
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -544,9 +548,11 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 		})
 		gatewayForwardingSF.Forget("gateway_forwarding")
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-			fingerprintUnification: settings.EnableFingerprintUnification,
-			metadataPassthrough:    settings.EnableMetadataPassthrough,
-			expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+			fingerprintUnification:      settings.EnableFingerprintUnification,
+			metadataPassthrough:         settings.EnableMetadataPassthrough,
+			metadataUserIDAnonymization: settings.EnableMetadataUserIDAnonymization,
+			privacyMode:                 settings.EnablePrivacyMode,
+			expiresAt:                   time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
 		if s.onUpdate != nil {
 			s.onUpdate() // Invalidate cache after settings update
@@ -652,20 +658,27 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 
 // GetGatewayForwardingSettings returns cached gateway forwarding settings.
 // Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path.
-// Returns (fingerprintUnification, metadataPassthrough).
-func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough bool) {
+// Returns (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode).
+// When privacy mode is enabled, fingerprintUnification and metadataUserIDAnonymization
+// are forced to true regardless of their individual settings.
+func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode bool) {
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
-			return cached.fingerprintUnification, cached.metadataPassthrough
+			fp, mua := cached.fingerprintUnification, cached.metadataUserIDAnonymization
+			pm := cached.privacyMode
+			if pm {
+				fp, mua = true, true
+			}
+			return fp, cached.metadataPassthrough, mua, pm
 		}
 	}
 	type gwfResult struct {
-		fp, mp bool
+		fp, mp, mua, pm bool
 	}
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
-				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough}, nil
+				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.metadataUserIDAnonymization, cached.privacyMode}, nil
 			}
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
@@ -673,32 +686,48 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
 			SettingKeyEnableFingerprintUnification,
 			SettingKeyEnableMetadataPassthrough,
+			SettingKeyEnableMetadataUserIDAnonymization,
+			SettingKeyEnablePrivacyMode,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
 			gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-				fingerprintUnification: true,
-				metadataPassthrough:    false,
-				expiresAt:              time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
+				fingerprintUnification:      true,
+				metadataPassthrough:         false,
+				metadataUserIDAnonymization: false,
+				privacyMode:                 true, // fail-safe: default privacy on
+				expiresAt:                   time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false}, nil
+			return gwfResult{true, false, false, true}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 			fp = v == "true"
 		}
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
+		mua := values[SettingKeyEnableMetadataUserIDAnonymization] == "true"
+		// privacy_mode defaults to true: treat missing/empty DB value as enabled
+		pm := true
+		if v, ok := values[SettingKeyEnablePrivacyMode]; ok && v != "" {
+			pm = v == "true"
+		}
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
-			fingerprintUnification: fp,
-			metadataPassthrough:    mp,
-			expiresAt:              time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+			fingerprintUnification:      fp,
+			metadataPassthrough:         mp,
+			metadataUserIDAnonymization: mua,
+			privacyMode:                 pm,
+			expiresAt:                   time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gwfResult{fp, mp}, nil
+		return gwfResult{fp, mp, mua, pm}, nil
 	})
 	if r, ok := val.(gwfResult); ok {
-		return r.fp, r.mp
+		fp, mua := r.fp, r.mua
+		if r.pm {
+			fp, mua = true, true
+		}
+		return fp, r.mp, mua, r.pm
 	}
-	return true, false // fail-open defaults
+	return true, false, false, true // fail-open defaults (privacy mode default enabled)
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -998,13 +1027,20 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"
 
-	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false)
+	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, metadata_userid_anonymization=false)
 	if v, ok := settings[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 		result.EnableFingerprintUnification = v == "true"
 	} else {
 		result.EnableFingerprintUnification = true // default: enabled (current behavior)
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
+	result.EnableMetadataUserIDAnonymization = settings[SettingKeyEnableMetadataUserIDAnonymization] == "true"
+	// privacy_mode defaults to true: DB value absent → enabled
+	if v, ok := settings[SettingKeyEnablePrivacyMode]; ok && v != "" {
+		result.EnablePrivacyMode = v == "true"
+	} else {
+		result.EnablePrivacyMode = true
+	}
 
 	return result
 }
