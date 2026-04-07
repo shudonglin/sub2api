@@ -58,6 +58,53 @@ volumes:
 | `PORT` | Server port | No | `8080` |
 | `GIN_MODE` | Gin framework mode (`debug`/`release`) | No | `release` |
 
+## Supabase / Hosted PostgreSQL
+
+If you are using Supabase, Neon, Amazon RDS, Google Cloud SQL, or any other hosted
+PostgreSQL provider, you can use a single `DATABASE_URL` connection string instead
+of specifying individual `DATABASE_HOST`, `DATABASE_PORT`, etc. environment variables.
+
+### Getting the connection string (Supabase)
+
+1. Open the Supabase Dashboard for your project.
+2. Go to **Settings > Database > Connection string > URI**.
+3. Copy the URI. It looks like:
+   ```
+   postgresql://postgres.[PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+   ```
+4. Append `?sslmode=require` if it is not already present.
+
+### Using docker-compose.supabase.yml
+
+```bash
+cd deploy
+cp .env.supabase.example .env
+# Edit .env and paste your DATABASE_URL
+docker compose -f docker-compose.supabase.yml up -d
+```
+
+This compose file runs only Sub2API + Redis (no local PostgreSQL container).
+
+### Connection pooling notes
+
+| Port | Mode | When to use |
+|------|------|-------------|
+| `6543` | Supabase connection pooler (Transaction mode) | Recommended for most workloads |
+| `5432` | Direct connection | Needed for migrations or long-lived connections |
+
+When `DATABASE_URL` is detected the application automatically:
+- Sets `sslmode=require` (if not specified in the URL).
+- Lowers pool defaults to `max_open_conns=20`, `max_idle_conns=10` to respect
+  hosted-DB connection limits.
+- You can override these via `DATABASE_MAX_OPEN_CONNS` / `DATABASE_MAX_IDLE_CONNS`
+  environment variables.
+
+### SSL requirement
+
+All hosted PostgreSQL providers require SSL. Make sure your connection string
+includes `?sslmode=require`. The `sslmode=disable` option is only appropriate
+for connections inside a Docker network to a co-located PostgreSQL container.
+
 ## Supported Architectures
 
 - `linux/amd64`
