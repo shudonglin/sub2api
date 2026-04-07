@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,9 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+	// credEncryptor encrypts/decrypts account credentials at rest.
+	// nil means encryption is disabled (plaintext legacy mode).
+	credEncryptor *CredentialEncryptor
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{
@@ -66,14 +70,14 @@ var schedulerNeutralExtraKeys = map[string]struct{}{
 
 // NewAccountRepository 创建账户仓储实例。
 // 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
-func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
-	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
+func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache, credEncryptor *CredentialEncryptor) service.AccountRepository {
+	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache, credEncryptor)
 }
 
 // newAccountRepositoryWithSQL 是内部构造函数，支持依赖注入 SQL 执行器。
 // 这种设计便于单元测试时注入 mock 对象。
-func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache) *accountRepository {
-	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache}
+func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache, credEncryptor *CredentialEncryptor) *accountRepository {
+	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache, credEncryptor: credEncryptor}
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
@@ -81,12 +85,17 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 		return service.ErrAccountNilInput
 	}
 
+	encCreds, err := r.credEncryptor.EncryptCredentials(normalizeJSONMap(account.Credentials))
+	if err != nil {
+		return fmt.Errorf("encrypt credentials on create: %w", err)
+	}
+
 	builder := r.client.Account.Create().
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
 		SetType(account.Type).
-		SetCredentials(normalizeJSONMap(account.Credentials)).
+		SetCredentials(encCreds).
 		SetExtra(normalizeJSONMap(account.Extra)).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
@@ -213,6 +222,13 @@ func (r *accountRepository) GetByIDs(ctx context.Context, ids []int64) ([]*servi
 			continue
 		}
 
+		// Decrypt credentials if stored encrypted.
+		decrypted, err := r.credEncryptor.DecryptCredentials(out.Credentials)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt credentials for account %d: %w", out.ID, err)
+		}
+		out.Credentials = decrypted
+
 		// Prefer the preloaded proxy edge when available.
 		if entAcc.Edges.Proxy != nil {
 			out.Proxy = proxyEntityToService(entAcc.Edges.Proxy)
@@ -318,12 +334,17 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 		return nil
 	}
 
+	encCreds, err := r.credEncryptor.EncryptCredentials(normalizeJSONMap(account.Credentials))
+	if err != nil {
+		return fmt.Errorf("encrypt credentials on update: %w", err)
+	}
+
 	builder := r.client.Account.UpdateOneID(account.ID).
 		SetName(account.Name).
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
 		SetType(account.Type).
-		SetCredentials(normalizeJSONMap(account.Credentials)).
+		SetCredentials(encCreds).
 		SetExtra(normalizeJSONMap(account.Extra)).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
@@ -405,8 +426,12 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 }
 
 func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
-	_, err := r.client.Account.UpdateOneID(id).
-		SetCredentials(normalizeJSONMap(credentials)).
+	encCreds, err := r.credEncryptor.EncryptCredentials(normalizeJSONMap(credentials))
+	if err != nil {
+		return fmt.Errorf("encrypt credentials on UpdateCredentials: %w", err)
+	}
+	_, err = r.client.Account.UpdateOneID(id).
+		SetCredentials(encCreds).
 		Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
@@ -1327,7 +1352,12 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		idx++
 	}
 	// JSONB 需要合并而非覆盖，使用 raw SQL 保持旧行为。
-	if len(updates.Credentials) > 0 {
+	// When credential encryption is active, JSONB merge at the SQL level is not
+	// possible because the column stores an opaque encrypted blob. In that case
+	// we fall back to per-account read-merge-encrypt-write after the main bulk
+	// UPDATE (see bulkMergeEncryptedCredentials below).
+	bulkCredsMergeNeeded := len(updates.Credentials) > 0 && r.credEncryptor != nil
+	if len(updates.Credentials) > 0 && !bulkCredsMergeNeeded {
 		payload, err := json.Marshal(updates.Credentials)
 		if err != nil {
 			return 0, err
@@ -1346,23 +1376,39 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		idx++
 	}
 
-	if len(setClauses) == 0 {
+	if len(setClauses) == 0 && !bulkCredsMergeNeeded {
 		return 0, nil
 	}
 
-	setClauses = append(setClauses, "updated_at = NOW()")
+	var rows int64
+	if len(setClauses) > 0 {
+		setClauses = append(setClauses, "updated_at = NOW()")
 
-	query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + " WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
-	args = append(args, pq.Array(ids))
+		query := "UPDATE accounts SET " + joinClauses(setClauses, ", ") + " WHERE id = ANY($" + itoa(idx) + ") AND deleted_at IS NULL"
+		args = append(args, pq.Array(ids))
 
-	result, err := r.sql.ExecContext(ctx, query, args...)
-	if err != nil {
-		return 0, err
+		result, err := r.sql.ExecContext(ctx, query, args...)
+		if err != nil {
+			return 0, err
+		}
+		rows, err = result.RowsAffected()
+		if err != nil {
+			return 0, err
+		}
 	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return 0, err
+
+	// When credential encryption is active, perform per-account read-merge-encrypt-write
+	// because JSONB merge at the SQL level is not possible with encrypted blobs.
+	if bulkCredsMergeNeeded {
+		mergeCount, err := r.bulkMergeEncryptedCredentials(ctx, ids, updates.Credentials)
+		if err != nil {
+			return rows, fmt.Errorf("bulk merge encrypted credentials: %w", err)
+		}
+		if mergeCount > rows {
+			rows = mergeCount
+		}
 	}
+
 	if rows > 0 {
 		payload := map[string]any{"account_ids": ids}
 		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountBulkChanged, nil, nil, payload); err != nil {
@@ -1380,6 +1426,41 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		}
 	}
 	return rows, nil
+}
+
+// bulkMergeEncryptedCredentials reads each account's credentials, merges the
+// new keys, encrypts, and writes back. This is used when credential encryption
+// is active and BulkUpdate needs to merge credential keys.
+func (r *accountRepository) bulkMergeEncryptedCredentials(ctx context.Context, ids []int64, mergeKeys map[string]any) (int64, error) {
+	accounts, err := r.client.Account.Query().Where(dbaccount.IDIn(ids...)).All(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	for _, acc := range accounts {
+		// Decrypt existing credentials (handles both encrypted and plaintext).
+		existing, err := r.credEncryptor.DecryptCredentials(copyJSONMap(acc.Credentials))
+		if err != nil {
+			return count, fmt.Errorf("account %d: %w", acc.ID, err)
+		}
+		if existing == nil {
+			existing = map[string]any{}
+		}
+		// Merge new keys.
+		for k, v := range mergeKeys {
+			existing[k] = v
+		}
+		// Encrypt merged result.
+		encCreds, err := r.credEncryptor.EncryptCredentials(existing)
+		if err != nil {
+			return count, fmt.Errorf("account %d: %w", acc.ID, err)
+		}
+		if _, err := r.client.Account.UpdateOneID(acc.ID).SetCredentials(encCreds).Save(ctx); err != nil {
+			return count, fmt.Errorf("account %d: %w", acc.ID, err)
+		}
+		count++
+	}
+	return count, nil
 }
 
 type accountGroupQueryOptions struct {
@@ -1479,6 +1560,12 @@ func (r *accountRepository) accountsToService(ctx context.Context, accounts []*d
 		if out == nil {
 			continue
 		}
+		// Decrypt credentials if stored encrypted.
+		decrypted, err := r.credEncryptor.DecryptCredentials(out.Credentials)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt credentials for account %d: %w", out.ID, err)
+		}
+		out.Credentials = decrypted
 		if acc.ProxyID != nil {
 			if proxy, ok := proxyMap[*acc.ProxyID]; ok {
 				out.Proxy = proxy

@@ -1,0 +1,4 @@
+# Protect CI/CD workflow files — changes require security review
+.github/workflows/ @Wei-Shaw
+.goreleaser.yaml @Wei-Shaw
+.goreleaser.simple.yaml @Wei-Shaw

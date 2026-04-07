@@ -133,3 +133,7 @@ frontend/coverage/
 aicodex
 output/
 
+# Security: prevent committing runtime data with secrets
+deploy/data/
+.gstack/
+

@@ -24,6 +24,7 @@ func RegisterAdminRoutes(
 
 	admin := v1.Group("/admin")
 	admin.Use(gin.HandlerFunc(adminAuth))
+	admin.Use(servermiddleware.AdminAuditLog())
 	admin.Use(rateLimiter.LimitWithOptions("admin-api", 60, time.Minute, middleware.RateLimitOptions{
 		FailureMode: middleware.RateLimitFailClose,
 	}))
