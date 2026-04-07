@@ -705,10 +705,10 @@ database:
   # Database name
   # 数据库名称
   dbname: "sub2api"
-  # SSL mode: disable, prefer, require, verify-ca, verify-full
-  # SSL 模式：disable（禁用）, prefer（优先加密，默认）, require（要求）, verify-ca（验证CA）, verify-full（完全验证）
-  # 默认值为 "prefer"，数据库支持 SSL 时自动使用加密连接，不支持时回退明文
-  sslmode: "prefer"
+  # SSL mode: disable, require, verify-ca, verify-full (lib/pq does NOT support "prefer")
+  # SSL 模式：disable（禁用）, require（要求）, verify-ca（验证CA）, verify-full（完全验证）
+  # Use "disable" for Docker internal networks, "require" for external/cloud databases
+  sslmode: "disable"
   # Max open connections (高并发场景建议 256+，需配合 PostgreSQL max_connections 调整)
   # 最大打开连接数
   max_open_conns: 256
@@ -828,7 +828,7 @@ default:
   # Initial admin account (created on first run)
   # 初始管理员账户（首次运行时创建）
   admin_email: "admin@example.com"
-  admin_password: "admin123"
+  admin_password: ""  # REQUIRED: Set a strong admin password
 
   # Default settings for new users
   # 新用户默认设置

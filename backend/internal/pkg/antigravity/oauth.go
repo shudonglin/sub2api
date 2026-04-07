@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,16 +54,18 @@ const (
 var defaultUserAgentVersion = "1.21.9"
 
 // defaultClientSecret 可通过环境变量 ANTIGRAVITY_OAUTH_CLIENT_SECRET 配置
-var defaultClientSecret = "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"
+var defaultClientSecret = ""
 
 func init() {
 	// 从环境变量读取版本号，未设置则使用默认值
 	if version := os.Getenv("ANTIGRAVITY_USER_AGENT_VERSION"); version != "" {
 		defaultUserAgentVersion = version
 	}
-	// 从环境变量读取 client_secret，未设置则使用默认值
+	// 从环境变量读取 client_secret
 	if secret := os.Getenv(AntigravityOAuthClientSecretEnv); secret != "" {
 		defaultClientSecret = secret
+	} else {
+		log.Printf("[WARNING] %s not set — Antigravity OAuth will not work until configured", AntigravityOAuthClientSecretEnv)
 	}
 }
 

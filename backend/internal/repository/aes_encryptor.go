@@ -18,15 +18,24 @@ type AESEncryptor struct {
 	key []byte
 }
 
-// NewAESEncryptor creates a new AES encryptor
+// NewAESEncryptor creates a new AES encryptor from TOTP config.
 func NewAESEncryptor(cfg *config.Config) (service.SecretEncryptor, error) {
-	key, err := hex.DecodeString(cfg.Totp.EncryptionKey)
+	enc, err := newAESEncryptorFromHex(cfg.Totp.EncryptionKey)
 	if err != nil {
-		return nil, fmt.Errorf("invalid totp encryption key: %w", err)
+		return nil, fmt.Errorf("totp encryption: %w", err)
+	}
+	return enc, nil
+}
+
+// newAESEncryptorFromHex creates an AESEncryptor from a hex-encoded 32-byte key.
+func newAESEncryptorFromHex(hexKey string) (*AESEncryptor, error) {
+	key, err := hex.DecodeString(hexKey)
+	if err != nil {
+		return nil, fmt.Errorf("invalid encryption key (not valid hex): %w", err)
 	}
 
 	if len(key) != 32 {
-		return nil, fmt.Errorf("totp encryption key must be 32 bytes (64 hex chars), got %d bytes", len(key))
+		return nil, fmt.Errorf("encryption key must be 32 bytes (64 hex chars), got %d bytes", len(key))
 	}
 
 	return &AESEncryptor{key: key}, nil
