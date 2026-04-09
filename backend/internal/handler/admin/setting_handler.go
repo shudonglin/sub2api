@@ -130,6 +130,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableMetadataPassthrough:            settings.EnableMetadataPassthrough,
 		EnableMetadataUserIDAnonymization:    settings.EnableMetadataUserIDAnonymization,
 		EnablePrivacyMode:                    settings.EnablePrivacyMode,
+		EnableCCHSigning:                     settings.EnableCCHSigning,
 	})
 }
 
@@ -215,6 +216,7 @@ type UpdateSettingsRequest struct {
 	EnableMetadataPassthrough         *bool `json:"enable_metadata_passthrough"`
 	EnableMetadataUserIDAnonymization *bool `json:"enable_metadata_userid_anonymization"`
 	EnablePrivacyMode                 *bool `json:"enable_privacy_mode"`
+	EnableCCHSigning                  *bool `json:"enable_cch_signing"`
 }
 
 // UpdateSettings 更新系统设置
@@ -630,6 +632,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.EnablePrivacyMode
 		}(),
+		EnableCCHSigning: func() bool {
+			if req.EnableCCHSigning != nil {
+				return *req.EnableCCHSigning
+			}
+			return previousSettings.EnableCCHSigning
+		}(),
 	}
 
 	if err := h.settingService.UpdateSettings(c.Request.Context(), settings); err != nil {
@@ -711,6 +719,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableMetadataPassthrough:            updatedSettings.EnableMetadataPassthrough,
 		EnableMetadataUserIDAnonymization:    updatedSettings.EnableMetadataUserIDAnonymization,
 		EnablePrivacyMode:                    updatedSettings.EnablePrivacyMode,
+		EnableCCHSigning:                     updatedSettings.EnableCCHSigning,
 	})
 }
 
@@ -894,6 +903,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.EnablePrivacyMode != after.EnablePrivacyMode {
 		changed = append(changed, "enable_privacy_mode")
+	}
+	if before.EnableCCHSigning != after.EnableCCHSigning {
+		changed = append(changed, "enable_cch_signing")
 	}
 	return changed
 }

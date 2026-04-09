@@ -83,6 +83,7 @@ type cachedGatewayForwardingSettings struct {
 	metadataPassthrough         bool
 	metadataUserIDAnonymization bool
 	privacyMode                 bool
+	cchSigning                  bool
 	expiresAt                   int64 // unix nano
 }
 
@@ -518,6 +519,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableMetadataUserIDAnonymization] = strconv.FormatBool(settings.EnableMetadataUserIDAnonymization)
 	updates[SettingKeyEnablePrivacyMode] = strconv.FormatBool(settings.EnablePrivacyMode)
+	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
 
 	err = s.settingRepo.SetMultiple(ctx, updates)
 	if err == nil {
@@ -539,6 +541,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 			metadataPassthrough:         settings.EnableMetadataPassthrough,
 			metadataUserIDAnonymization: settings.EnableMetadataUserIDAnonymization,
 			privacyMode:                 settings.EnablePrivacyMode,
+			cchSigning:                  settings.EnableCCHSigning,
 			expiresAt:                   time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
 		if s.onUpdate != nil {
@@ -645,10 +648,10 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 
 // GetGatewayForwardingSettings returns cached gateway forwarding settings.
 // Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path.
-// Returns (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode).
+// Returns (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode, cchSigning).
 // When privacy mode is enabled, fingerprintUnification and metadataUserIDAnonymization
 // are forced to true regardless of their individual settings.
-func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode bool) {
+func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode, cchSigning bool) {
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			fp, mua := cached.fingerprintUnification, cached.metadataUserIDAnonymization
@@ -656,16 +659,16 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			if pm {
 				fp, mua = true, true
 			}
-			return fp, cached.metadataPassthrough, mua, pm
+			return fp, cached.metadataPassthrough, mua, pm, cached.cchSigning
 		}
 	}
 	type gwfResult struct {
-		fp, mp, mua, pm bool
+		fp, mp, mua, pm, cch bool
 	}
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
-				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.metadataUserIDAnonymization, cached.privacyMode}, nil
+				return gwfResult{cached.fingerprintUnification, cached.metadataPassthrough, cached.metadataUserIDAnonymization, cached.privacyMode, cached.cchSigning}, nil
 			}
 		}
 		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), gatewayForwardingDBTimeout)
@@ -675,6 +678,7 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 			SettingKeyEnableMetadataPassthrough,
 			SettingKeyEnableMetadataUserIDAnonymization,
 			SettingKeyEnablePrivacyMode,
+			SettingKeyEnableCCHSigning,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
@@ -683,9 +687,10 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 				metadataPassthrough:         false,
 				metadataUserIDAnonymization: false,
 				privacyMode:                 true, // fail-safe: default privacy on
+				cchSigning:                  false,
 				expiresAt:                   time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gwfResult{true, false, false, true}, nil
+			return gwfResult{true, false, false, true, false}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
@@ -698,23 +703,25 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 		if v, ok := values[SettingKeyEnablePrivacyMode]; ok && v != "" {
 			pm = v == "true"
 		}
+		cch := values[SettingKeyEnableCCHSigning] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:      fp,
 			metadataPassthrough:         mp,
 			metadataUserIDAnonymization: mua,
 			privacyMode:                 pm,
+			cchSigning:                  cch,
 			expiresAt:                   time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gwfResult{fp, mp, mua, pm}, nil
+		return gwfResult{fp, mp, mua, pm, cch}, nil
 	})
 	if r, ok := val.(gwfResult); ok {
 		fp, mua := r.fp, r.mua
 		if r.pm {
 			fp, mua = true, true
 		}
-		return fp, r.mp, mua, r.pm
+		return fp, r.mp, mua, r.pm, r.cch
 	}
-	return true, false, false, true // fail-open defaults (privacy mode default enabled)
+	return true, false, false, true, false // fail-open defaults (privacy mode default enabled)
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -1012,7 +1019,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"
 
-	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, metadata_userid_anonymization=false)
+	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, metadata_userid_anonymization=false, cch_signing=false)
 	if v, ok := settings[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 		result.EnableFingerprintUnification = v == "true"
 	} else {
@@ -1026,6 +1033,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	} else {
 		result.EnablePrivacyMode = true
 	}
+	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
 
 	return result
 }
@@ -1562,6 +1570,18 @@ func (s *SettingService) SetBetaPolicySettings(ctx context.Context, settings *Be
 		}
 		if !validScopes[rule.Scope] {
 			return fmt.Errorf("rule[%d]: invalid scope %q", i, rule.Scope)
+		}
+		// Validate model_whitelist patterns
+		for j, pattern := range rule.ModelWhitelist {
+			trimmed := strings.TrimSpace(pattern)
+			if trimmed == "" {
+				return fmt.Errorf("rule[%d]: model_whitelist[%d] cannot be empty", i, j)
+			}
+			settings.Rules[i].ModelWhitelist[j] = trimmed
+		}
+		// Validate fallback_action
+		if rule.FallbackAction != "" && !validActions[rule.FallbackAction] {
+			return fmt.Errorf("rule[%d]: invalid fallback_action %q", i, rule.FallbackAction)
 		}
 	}
 

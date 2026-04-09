@@ -80,6 +80,7 @@ type SystemSettings struct {
 	EnableMetadataPassthrough         bool // 是否透传客户端原始 metadata（默认 false）
 	EnableMetadataUserIDAnonymization bool // 是否匿名化 metadata.user_id 中的 device/account 标识（默认 false）
 	EnablePrivacyMode                 bool // 隐私强化模式：强制开启指纹统一 + metadata 匿名化 + 会话 ID 伪装（默认 true）
+	EnableCCHSigning                  bool // 是否对 billing header cch 进行签名（默认 false）
 }
 
 type DefaultSubscriptionSetting struct {
@@ -180,10 +181,13 @@ const (
 
 // BetaPolicyRule 单条 Beta 策略规则
 type BetaPolicyRule struct {
-	BetaToken    string `json:"beta_token"`              // beta token 值
-	Action       string `json:"action"`                  // "pass" | "filter" | "block"
-	Scope        string `json:"scope"`                   // "all" | "oauth" | "apikey" | "bedrock"
-	ErrorMessage string `json:"error_message,omitempty"` // 自定义错误消息 (action=block 时生效)
+	BetaToken            string   `json:"beta_token"`                       // beta token 值
+	Action               string   `json:"action"`                           // "pass" | "filter" | "block"
+	Scope                string   `json:"scope"`                            // "all" | "oauth" | "apikey" | "bedrock"
+	ErrorMessage         string   `json:"error_message,omitempty"`          // 自定义错误消息 (action=block 时生效)
+	ModelWhitelist       []string `json:"model_whitelist,omitempty"`        // 模型匹配模式列表（为空=对所有模型生效）
+	FallbackAction       string   `json:"fallback_action,omitempty"`        // 未匹配白名单的模型的处理方式
+	FallbackErrorMessage string   `json:"fallback_error_message,omitempty"` // 未匹配白名单时的自定义错误消息 (fallback_action=block 时生效)
 }
 
 // BetaPolicySettings Beta 策略配置

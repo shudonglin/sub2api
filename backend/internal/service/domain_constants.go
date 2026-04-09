@@ -230,6 +230,8 @@ const (
 	// 3. 会话 ID 伪装（session_id_masking）：15 分钟内固定 session ID，
 	//    防止上游通过高频 session 变化推断请求模式。
 	SettingKeyEnablePrivacyMode = "enable_privacy_mode"
+	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 false）
+	SettingKeyEnableCCHSigning = "enable_cch_signing"
 )
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).

@@ -89,6 +89,7 @@ export interface SystemSettings {
   // Gateway forwarding behavior
   enable_fingerprint_unification: boolean
   enable_metadata_passthrough: boolean
+  enable_cch_signing: boolean
 }
 
 export interface UpdateSettingsRequest {
@@ -146,6 +147,7 @@ export interface UpdateSettingsRequest {
   allow_ungrouped_key_scheduling?: boolean
   enable_fingerprint_unification?: boolean
   enable_metadata_passthrough?: boolean
+  enable_cch_signing?: boolean
 }
 
 /**
@@ -359,6 +361,9 @@ export interface BetaPolicyRule {
   action: 'pass' | 'filter' | 'block'
   scope: 'all' | 'oauth' | 'apikey' | 'bedrock'
   error_message?: string
+  model_whitelist?: string[]
+  fallback_action?: 'pass' | 'filter' | 'block'
+  fallback_error_message?: string
 }
 
 /**
