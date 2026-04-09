@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,12 +35,6 @@ func setupDefaultAdminConcurrency() int {
 		return simpleModeAdminConcurrency
 	}
 	return defaultUserConcurrency
-}
-
-// redactDSN masks the password in a PostgreSQL DSN string for safe logging.
-func redactDSN(dsn string) string {
-	re := regexp.MustCompile(`password=[^\s]+`)
-	return re.ReplaceAllString(dsn, "password=***")
 }
 
 // GetDataDir returns the data directory for storing config and lock files.
@@ -550,16 +543,36 @@ func AutoSetupFromEnv() error {
 		tz = getEnvOrDefault("TIMEZONE", "Asia/Shanghai")
 	}
 
-	// Build config from environment variables
-	cfg := &SetupConfig{
-		Database: DatabaseConfig{
+	// Build database config: DATABASE_URL takes precedence over individual fields
+	var dbCfg DatabaseConfig
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		parsed, err := config.ParseDatabaseURL(dbURL)
+		if err != nil {
+			return fmt.Errorf("invalid DATABASE_URL: %w", err)
+		}
+		dbCfg = DatabaseConfig{
+			Host:     parsed.Host,
+			Port:     parsed.Port,
+			User:     parsed.User,
+			Password: parsed.Password,
+			DBName:   parsed.DBName,
+			SSLMode:  parsed.SSLMode,
+		}
+		logger.LegacyPrintf("setup", "DATABASE_URL detected; using hosted DB connection settings (host=%s port=%d dbname=%s sslmode=%s)", dbCfg.Host, dbCfg.Port, dbCfg.DBName, dbCfg.SSLMode)
+	} else {
+		dbCfg = DatabaseConfig{
 			Host:     getEnvOrDefault("DATABASE_HOST", "localhost"),
 			Port:     getEnvIntOrDefault("DATABASE_PORT", 5432),
 			User:     getEnvOrDefault("DATABASE_USER", "postgres"),
 			Password: getEnvOrDefault("DATABASE_PASSWORD", ""),
 			DBName:   getEnvOrDefault("DATABASE_DBNAME", "sub2api"),
 			SSLMode:  getEnvOrDefault("DATABASE_SSLMODE", "disable"),
-		},
+		}
+	}
+
+	// Build config from environment variables
+	cfg := &SetupConfig{
+		Database: dbCfg,
 		Redis: RedisConfig{
 			Host:      getEnvOrDefault("REDIS_HOST", "localhost"),
 			Port:      getEnvIntOrDefault("REDIS_PORT", 6379),

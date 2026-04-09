@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -660,6 +661,10 @@ func (s *ServerConfig) Address() string {
 // DatabaseConfig 数据库连接配置
 // 性能优化：新增连接池参数，避免频繁创建/销毁连接
 type DatabaseConfig struct {
+	// URL: 完整的 PostgreSQL 连接字符串（postgres:// 或 postgresql://）。
+	// 设置后优先于 Host/Port/User/Password/DBName/SSLMode 字段；
+	// 连接池参数（MaxOpenConns 等）仍可通过独立环境变量覆盖。
+	URL      string `mapstructure:"url"`
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	User     string `mapstructure:"user"`
@@ -707,6 +712,105 @@ func (d *DatabaseConfig) DSNWithTimezone(tz string) string {
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode, tz,
 	)
+}
+
+// ParseDatabaseURL parses a postgres:// or postgresql:// connection URL into
+// a partially-filled DatabaseConfig. Callers can overlay individual env vars
+// (e.g. DATABASE_MAX_OPEN_CONNS) on top of the returned struct.
+//
+// Edge-case handling:
+//   - Port defaults to 5432 when omitted.
+//   - SSLMode defaults to "require" (hosted DBs need SSL).
+//   - Pool defaults are tuned for hosted DBs: max_open=20, max_idle=10.
+func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("malformed DATABASE_URL: %w", err)
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return nil, fmt.Errorf("DATABASE_URL scheme must be postgres:// or postgresql://, got %q", u.Scheme)
+	}
+
+	cfg := &DatabaseConfig{}
+
+	// Host (strip port if present)
+	cfg.Host = u.Hostname()
+	if cfg.Host == "" {
+		return nil, fmt.Errorf("DATABASE_URL missing host")
+	}
+
+	// Port – default 5432
+	portStr := u.Port()
+	if portStr == "" {
+		cfg.Port = 5432
+	} else {
+		p, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("DATABASE_URL invalid port %q: %w", portStr, err)
+		}
+		cfg.Port = p
+	}
+
+	// User / Password
+	if u.User != nil {
+		cfg.User = u.User.Username()
+		cfg.Password, _ = u.User.Password()
+	}
+
+	// Database name from path (strip leading '/')
+	cfg.DBName = strings.TrimPrefix(u.Path, "/")
+	if cfg.DBName == "" {
+		cfg.DBName = "postgres"
+	}
+
+	// SSLMode from query params; default "require" for hosted DBs
+	cfg.SSLMode = u.Query().Get("sslmode")
+	if cfg.SSLMode == "" {
+		cfg.SSLMode = "require"
+	}
+
+	// Hosted DB pool defaults (smaller than local defaults)
+	cfg.MaxOpenConns = 20
+	cfg.MaxIdleConns = 10
+	cfg.ConnMaxLifetimeMinutes = 30
+	cfg.ConnMaxIdleTimeMinutes = 5
+
+	return cfg, nil
+}
+
+// ApplyURL parses DatabaseConfig.URL (if non-empty) and overwrites the
+// individual connection fields. Pool parameters are only replaced when
+// they haven't been explicitly set to a non-default value.
+func (d *DatabaseConfig) ApplyURL() error {
+	if d.URL == "" {
+		return nil
+	}
+	parsed, err := ParseDatabaseURL(d.URL)
+	if err != nil {
+		return err
+	}
+	d.Host = parsed.Host
+	d.Port = parsed.Port
+	d.User = parsed.User
+	d.Password = parsed.Password
+	d.DBName = parsed.DBName
+	d.SSLMode = parsed.SSLMode
+
+	// Only apply hosted-DB pool defaults when the caller hasn't set them
+	// explicitly (i.e. they still carry the viper defaults for local DB).
+	const (
+		localDefaultMaxOpen = 256
+		localDefaultMaxIdle = 128
+	)
+	if d.MaxOpenConns == localDefaultMaxOpen {
+		d.MaxOpenConns = parsed.MaxOpenConns
+	}
+	if d.MaxIdleConns == localDefaultMaxIdle {
+		d.MaxIdleConns = parsed.MaxIdleConns
+	}
+
+	slog.Info("DATABASE_URL detected; using hosted DB pool defaults (max_open=20, max_idle=10). Override with DATABASE_MAX_OPEN_CONNS / DATABASE_MAX_IDLE_CONNS.")
+	return nil
 }
 
 // RedisConfig Redis 连接配置
@@ -954,6 +1058,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config error: %w", err)
 	}
 
+	// When DATABASE_URL is set, parse it and overwrite individual DB fields.
+	// Pool parameters keep their explicit overrides (if any).
+	if err := cfg.Database.ApplyURL(); err != nil {
+		return nil, fmt.Errorf("apply DATABASE_URL error: %w", err)
+	}
+
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
@@ -1147,6 +1257,7 @@ func setDefaults() {
 	viper.SetDefault("linuxdo_connect.userinfo_username_path", "")
 
 	// Database
+	viper.SetDefault("database.url", "")
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
 	viper.SetDefault("database.user", "postgres")
