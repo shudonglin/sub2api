@@ -11,8 +11,9 @@
 #   4. Access: http://localhost:8080
 #
 # Connection notes:
-#   - Supabase pooler (Transaction mode): use port 6543
-#   - Supabase direct connection: use port 5432
+#   - Supabase Session pooler (recommended): use port 5432
+#     Transaction pooler (port 6543) is NOT compatible with lib/pq prepared statements
+#   - Supabase direct connection: use db.[REF].supabase.co:5432
 #   - SSL is required for all hosted PostgreSQL providers
 # =============================================================================
 
@@ -21,7 +22,10 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: weishaw/sub2api:latest
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: sub2api:local
     container_name: sub2api
     restart: unless-stopped
     ulimits:
@@ -50,8 +54,8 @@ services:
       # Database — hosted PostgreSQL via DATABASE_URL
       # =======================================================================
       # Full connection string; takes precedence over individual DATABASE_* vars.
-      # Example (Supabase pooler):
-      #   postgresql://postgres.[REF]:[PASS]@aws-0-[REGION].pooler.supabase.com:6543/postgres?sslmode=require
+      # Example (Supabase session pooler, port 5432):
+      #   postgresql://postgres.[REF]:[PASS]@aws-[N]-[REGION].pooler.supabase.com:5432/postgres?sslmode=require
       - DATABASE_URL=${DATABASE_URL:?DATABASE_URL is required}
       # Pool defaults are auto-tuned for hosted DBs (max_open=20, max_idle=10).
       # Override if your plan supports more connections:
