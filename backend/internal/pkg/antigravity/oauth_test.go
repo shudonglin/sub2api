@@ -680,12 +680,13 @@ func TestConstants_值正确(t *testing.T) {
 	if ClientID != "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com" {
 		t.Errorf("ClientID 不匹配: got %s", ClientID)
 	}
-	secret, err := getClientSecret()
-	if err != nil {
-		t.Fatalf("getClientSecret 应返回默认值，但报错: %v", err)
-	}
-	if secret != "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" {
-		t.Errorf("默认 client_secret 不匹配: got %s", secret)
+	// defaultClientSecret is now env-driven; when unset, getClientSecret must error
+	old := defaultClientSecret
+	defaultClientSecret = ""
+	t.Cleanup(func() { defaultClientSecret = old })
+	_, err := getClientSecret()
+	if err == nil {
+		t.Fatal("defaultClientSecret 为空时应返回错误")
 	}
 	if RedirectURI != "http://localhost:8085/callback" {
 		t.Errorf("RedirectURI 不匹配: got %s", RedirectURI)

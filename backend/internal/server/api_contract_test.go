@@ -538,6 +538,8 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
+					"enable_metadata_userid_anonymization": false,
+					"enable_privacy_mode": true,
 					"custom_menu_items": [],
 					"custom_endpoints": []
 				}

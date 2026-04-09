@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -36,12 +35,6 @@ func setupDefaultAdminConcurrency() int {
 		return simpleModeAdminConcurrency
 	}
 	return defaultUserConcurrency
-}
-
-// redactDSN masks the password in a PostgreSQL DSN string for safe logging.
-func redactDSN(dsn string) string {
-	re := regexp.MustCompile(`password=[^\s]+`)
-	return re.ReplaceAllString(dsn, "password=***")
 }
 
 // GetDataDir returns the data directory for storing config and lock files.
@@ -558,12 +551,12 @@ func AutoSetupFromEnv() error {
 			return fmt.Errorf("invalid DATABASE_URL: %w", err)
 		}
 		dbCfg = DatabaseConfig{
-			Host:    parsed.Host,
-			Port:    parsed.Port,
-			User:    parsed.User,
+			Host:     parsed.Host,
+			Port:     parsed.Port,
+			User:     parsed.User,
 			Password: parsed.Password,
-			DBName:  parsed.DBName,
-			SSLMode: parsed.SSLMode,
+			DBName:   parsed.DBName,
+			SSLMode:  parsed.SSLMode,
 		}
 		logger.LegacyPrintf("setup", "DATABASE_URL detected; using hosted DB connection settings (host=%s port=%d dbname=%s sslmode=%s)", dbCfg.Host, dbCfg.Port, dbCfg.DBName, dbCfg.SSLMode)
 	} else {
