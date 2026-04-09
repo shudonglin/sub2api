@@ -2216,6 +2216,7 @@ func (s *adminServiceImpl) CheckProxyQuality(ctx context.Context, id int64) (*Pr
 		ProxyURL:              proxyURL,
 		Timeout:               proxyQualityRequestTimeout,
 		ResponseHeaderTimeout: proxyQualityResponseHeaderTimeout,
+		ValidateResolvedIP:    true,
 	})
 	if err != nil {
 		result.Items = append(result.Items, ProxyQualityCheckItem{
