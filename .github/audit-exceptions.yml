@@ -28,3 +28,10 @@ exceptions:
     mitigation: "No user-controlled template strings; plan to migrate to native JS alternatives"
     expires_on: "2026-07-02"
     owner: "security@your-domain"
+  - package: axios
+    advisory: "GHSA-3p68-rc4w-qgx5"
+    severity: critical
+    reason: "axios NO_PROXY normalization bypass; app does not use NO_PROXY env var for proxy routing"
+    mitigation: "No proxy configuration in use; plan to upgrade axios when fix is released"
+    expires_on: "2026-10-10"
+    owner: "security@your-domain"
