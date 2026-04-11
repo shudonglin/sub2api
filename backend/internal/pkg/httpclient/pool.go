@@ -48,9 +48,10 @@ type Options struct {
 	AllowPrivateHosts     bool          // 允许私有地址解析（与 ValidateResolvedIP 一起使用）
 
 	// 可选的连接池参数（不设置则使用默认值）
-	MaxIdleConns        int // 最大空闲连接总数（默认 100）
-	MaxIdleConnsPerHost int // 每主机最大空闲连接（默认 10）
-	MaxConnsPerHost     int // 每主机最大连接数（默认 0 无限制）
+	MaxIdleConns        int           // 最大空闲连接总数（默认 100）
+	MaxIdleConnsPerHost int           // 每主机最大空闲连接（默认 10）
+	MaxConnsPerHost     int           // 每主机最大连接数（默认 0 无限制）
+	IdleConnTimeout     time.Duration // 空闲连接超时（默认 90s）；0 表示使用 defaultIdleConnTimeout
 }
 
 // sharedClients 存储按配置参数缓存的 http.Client 实例
@@ -109,6 +110,11 @@ func buildTransport(opts Options) (*http.Transport, error) {
 		maxIdleConnsPerHost = defaultMaxIdleConnsPerHost
 	}
 
+	idleConnTimeout := opts.IdleConnTimeout
+	if idleConnTimeout <= 0 {
+		idleConnTimeout = defaultIdleConnTimeout
+	}
+
 	transport := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout: defaultDialTimeout,
@@ -117,7 +123,7 @@ func buildTransport(opts Options) (*http.Transport, error) {
 		MaxIdleConns:          maxIdleConns,
 		MaxIdleConnsPerHost:   maxIdleConnsPerHost,
 		MaxConnsPerHost:       opts.MaxConnsPerHost, // 0 表示无限制
-		IdleConnTimeout:       defaultIdleConnTimeout,
+		IdleConnTimeout:       idleConnTimeout,
 		ResponseHeaderTimeout: opts.ResponseHeaderTimeout,
 	}
 
@@ -142,7 +148,7 @@ func buildTransport(opts Options) (*http.Transport, error) {
 }
 
 func buildClientKey(opts Options) string {
-	return fmt.Sprintf("%s|%s|%s|%t|%t|%t|%d|%d|%d",
+	return fmt.Sprintf("%s|%s|%s|%t|%t|%t|%d|%d|%d|%s",
 		strings.TrimSpace(opts.ProxyURL),
 		opts.Timeout.String(),
 		opts.ResponseHeaderTimeout.String(),
@@ -152,6 +158,7 @@ func buildClientKey(opts Options) string {
 		opts.MaxIdleConns,
 		opts.MaxIdleConnsPerHost,
 		opts.MaxConnsPerHost,
+		opts.IdleConnTimeout.String(),
 	)
 }
 

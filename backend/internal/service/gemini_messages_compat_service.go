@@ -1627,13 +1627,75 @@ func sleepGeminiBackoff(attempt int) {
 var (
 	sensitiveQueryParamRegex = regexp.MustCompile(`(?i)([?&](?:key|client_secret|access_token|refresh_token)=)[^&"\s]+`)
 	retryInRegex             = regexp.MustCompile(`Please retry in ([0-9.]+)s`)
+
+	// sanitize helpers — see sanitizeUpstreamErrorMessage for usage.
+	sanitizeAbsPathRegex    = regexp.MustCompile(`(?:[A-Z]:\\|/)[^\s)]+\.(?:go|ts|js|py):\d+(?::\d+)?`)
+	sanitizeInternalIPRegex = regexp.MustCompile(`\b(?:10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+)(?::\d+)?\b`)
+	sanitizeStackFrameRegex = regexp.MustCompile(`(?m)^\t.*$`)
+	sanitizeBearerRegex     = regexp.MustCompile(`(Bearer\s+)([A-Za-z0-9\-_\.]{10,})`)
+	sanitizePrefixKeyRegex  = regexp.MustCompile(`(sk-|cr_|pk_|rk_)[A-Za-z0-9\-_\.]{10,}`)
+	sanitizeHexBlobRegex    = regexp.MustCompile(`[a-f0-9]{32,}`)
 )
+
+const sanitizeMaxLen = 500
 
 func sanitizeUpstreamErrorMessage(msg string) string {
 	if msg == "" {
 		return msg
 	}
-	return sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+
+	// 1. Strip absolute file paths (Go/TS/JS/Py source references).
+	msg = sanitizeAbsPathRegex.ReplaceAllString(msg, "<path>")
+
+	// 2. Strip internal IPv4 addresses.
+	msg = sanitizeInternalIPRegex.ReplaceAllString(msg, "<internal>")
+
+	// 3. Drop tab-indented Go stack frame lines.
+	msg = sanitizeStackFrameRegex.ReplaceAllString(msg, "")
+
+	// 4. Mask Bearer tokens (preserve "Bearer " prefix).
+	msg = sanitizeBearerRegex.ReplaceAllStringFunc(msg, func(match string) string {
+		sub := sanitizeBearerRegex.FindStringSubmatch(match)
+		if len(sub) < 3 {
+			return match
+		}
+		return sub[1] + maskSanitizeToken(sub[2])
+	})
+
+	// 5. Mask sk-/cr_/pk_/rk_ prefixed API keys.
+	msg = sanitizePrefixKeyRegex.ReplaceAllStringFunc(msg, func(match string) string {
+		return maskSanitizeToken(match)
+	})
+
+	// 6. Mask long hex blobs.
+	msg = sanitizeHexBlobRegex.ReplaceAllStringFunc(msg, func(match string) string {
+		return maskSanitizeToken(match)
+	})
+
+	// 7. Existing query-param masking (preserve existing behaviour).
+	msg = sensitiveQueryParamRegex.ReplaceAllString(msg, `$1***`)
+
+	// 8. Cap length.
+	if len(msg) > sanitizeMaxLen {
+		msg = msg[:sanitizeMaxLen] + "...[truncated]"
+	}
+
+	return msg
+}
+
+// maskSanitizeToken is a self-contained copy of logger.MaskToken so that this
+// package does not import the logger package solely for sanitization logic.
+func maskSanitizeToken(s string) string {
+	const fill = "***"
+	n := len(s)
+	switch {
+	case n >= 20:
+		return s[:6] + fill + s[n-4:]
+	case n >= 12:
+		return s[:4] + fill + s[n-2:]
+	default:
+		return fill
+	}
 }
 
 func (s *GeminiMessagesCompatService) writeGeminiMappedError(c *gin.Context, account *Account, upstreamStatus int, upstreamRequestID string, body []byte) error {

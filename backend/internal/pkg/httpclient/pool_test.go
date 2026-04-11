@@ -5,10 +5,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -112,4 +114,52 @@ func TestValidatedTransport_ValidationErrorStopsRoundTrip(t *testing.T) {
 	_, err = transport.RoundTrip(req)
 	require.ErrorIs(t, err, expectedErr)
 	require.Equal(t, int32(0), atomic.LoadInt32(&baseCalls))
+}
+
+// ---------------------------------------------------------------------------
+// Pool preset tests
+// ---------------------------------------------------------------------------
+
+func TestStreamingOptions_DistinctFromNonStreaming(t *testing.T) {
+	base := Options{}
+	sOpts := StreamingOptions(base)
+	nOpts := NonStreamingOptions(base)
+
+	assert.NotEqual(t, sOpts.MaxIdleConns, nOpts.MaxIdleConns, "MaxIdleConns should differ")
+	assert.NotEqual(t, sOpts.MaxIdleConnsPerHost, nOpts.MaxIdleConnsPerHost, "MaxIdleConnsPerHost should differ")
+	assert.NotEqual(t, sOpts.IdleConnTimeout, nOpts.IdleConnTimeout, "IdleConnTimeout should differ")
+
+	// Sanity: streaming values are larger (stream pools are bigger)
+	assert.Greater(t, sOpts.MaxIdleConns, nOpts.MaxIdleConns)
+	assert.Greater(t, sOpts.MaxIdleConnsPerHost, nOpts.MaxIdleConnsPerHost)
+	assert.Greater(t, sOpts.IdleConnTimeout, nOpts.IdleConnTimeout)
+}
+
+func TestGetClient_StreamingVsNonStreamingReturnDifferentInstances(t *testing.T) {
+	// Reset shared map so this test is independent.
+	sharedClients = sync.Map{}
+	t.Cleanup(func() { sharedClients = sync.Map{} })
+
+	base := Options{Timeout: 0}
+	sClient, err := GetClient(StreamingOptions(base))
+	require.NoError(t, err)
+
+	nClient, err := GetClient(NonStreamingOptions(base))
+	require.NoError(t, err)
+
+	assert.NotSame(t, sClient, nClient, "streaming and non-streaming clients must be distinct cache entries")
+}
+
+func TestGetClient_SameStreamingOptionsReturnsCachedInstance(t *testing.T) {
+	sharedClients = sync.Map{}
+	t.Cleanup(func() { sharedClients = sync.Map{} })
+
+	base := Options{Timeout: 5 * time.Second}
+	c1, err := GetClient(StreamingOptions(base))
+	require.NoError(t, err)
+
+	c2, err := GetClient(StreamingOptions(base))
+	require.NoError(t, err)
+
+	assert.Same(t, c1, c2, "repeated calls with identical streaming options must return the cached instance")
 }

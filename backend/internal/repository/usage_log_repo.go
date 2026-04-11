@@ -26,6 +26,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 	gocache "github.com/patrickmn/go-cache"
+	"golang.org/x/sync/singleflight"
 )
 
 const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, created_at"
@@ -131,6 +132,14 @@ func appendRawUsageLogModelQueryFilter(query string, args []any, model string) (
 	return query, args
 }
 
+// summaryCacheEntry holds a snapshot of GetAllGroupUsageSummary results
+// along with the todayStart that was used and when the entry expires.
+type summaryCacheEntry struct {
+	todayStart time.Time
+	results    []usagestats.GroupUsageSummary
+	expiresAt  time.Time
+}
+
 type usageLogRepository struct {
 	client *dbent.Client
 	sql    sqlExecutor
@@ -141,6 +150,11 @@ type usageLogRepository struct {
 	bestEffortBatchOnce sync.Once
 	bestEffortBatchCh   chan usageLogBestEffortRequest
 	bestEffortRecent    *gocache.Cache
+
+	// Cache for GetAllGroupUsageSummary — 30-second in-process cache backed by
+	// singleflight to prevent thundering-herd on expiry.
+	summarySF     singleflight.Group
+	cachedSummary atomic.Pointer[summaryCacheEntry]
 }
 
 const (
@@ -3215,12 +3229,54 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 	return results, nil
 }
 
-// GetAllGroupUsageSummary returns today's and cumulative actual_cost for every group.
-// todayStart is the start-of-day in the caller's timezone (UTC-based).
-// TODO(perf): This query scans ALL usage_logs rows for total_cost aggregation.
-// When usage_logs exceeds ~1M rows, consider adding a short-lived cache (30s)
-// or a materialized view / pre-aggregation table for cumulative costs.
+const groupUsageSummaryCacheTTL = 30 * time.Second
+
+// GetAllGroupUsageSummary returns today's and cumulative actual_cost for every
+// group. Results are cached for 30 seconds; concurrent callers during a cache
+// miss are deduplicated via singleflight to avoid a thundering herd against the
+// database.
 func (r *usageLogRepository) GetAllGroupUsageSummary(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
+	// Fast-path: return cached entry if it is still valid for the same day.
+	if entry := r.cachedSummary.Load(); entry != nil &&
+		entry.todayStart.Equal(todayStart) &&
+		time.Now().Before(entry.expiresAt) {
+		// Return a defensive copy so callers cannot mutate the cached slice.
+		out := make([]usagestats.GroupUsageSummary, len(entry.results))
+		copy(out, entry.results)
+		return out, nil
+	}
+
+	// Slow-path: use singleflight to coalesce concurrent misses.
+	key := fmt.Sprintf("group-summary:%d", todayStart.Unix())
+	v, err, _ := r.summarySF.Do(key, func() (any, error) {
+		res, err := r.getAllGroupUsageSummaryUncached(ctx, todayStart)
+		if err != nil {
+			return nil, err
+		}
+		r.cachedSummary.Store(&summaryCacheEntry{
+			todayStart: todayStart,
+			results:    res,
+			expiresAt:  time.Now().Add(groupUsageSummaryCacheTTL),
+		})
+		return res, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	src, ok := v.([]usagestats.GroupUsageSummary)
+	if !ok {
+		return nil, fmt.Errorf("unexpected cache value type %T", v)
+	}
+	// Defensive copy for the singleflight winner and any shared callers.
+	out := make([]usagestats.GroupUsageSummary, len(src))
+	copy(out, src)
+	return out, nil
+}
+
+// getAllGroupUsageSummaryUncached performs the full table scan without any
+// caching. It is called exclusively from the singleflight wrapper above.
+// todayStart is the start-of-day in the caller's timezone (UTC-based).
+func (r *usageLogRepository) getAllGroupUsageSummaryUncached(ctx context.Context, todayStart time.Time) ([]usagestats.GroupUsageSummary, error) {
 	query := `
 		SELECT
 			g.id AS group_id,
