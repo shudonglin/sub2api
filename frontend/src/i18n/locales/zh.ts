@@ -458,7 +458,9 @@ export default {
     oauth: {
       code: '授权码',
       state: '状态',
-      fullUrl: '完整URL'
+      fullUrl: '完整URL',
+      callbackTitle: 'OAuth 回调',
+      callbackInstructions: '请将 code（如需要还包括 state）复制回管理员授权流程。'
     },
     // 忘记密码
     forgotPassword: '忘记密码？',
@@ -935,6 +937,11 @@ export default {
   errors: {
     somethingWentWrong: '出错了',
     pageNotFound: '页面未找到',
+    pageNotFoundMessage: '您访问的页面不存在或已被移除。',
+    goBack: '返回',
+    goToDashboard: '前往控制台',
+    needHelp: '需要帮助？',
+    contactSupport: '联系客服',
     unauthorized: '未授权',
     forbidden: '禁止访问',
     serverError: '服务器错误',
@@ -978,6 +985,7 @@ export default {
       totalAccounts: '账号总数',
       activeAccounts: '活跃账号',
       todayRequests: '今日请求',
+      newUsersToday: '今日新增用户',
       totalRequests: '总请求数',
       todayCost: '今日消费',
       totalCost: '总消费',
@@ -991,6 +999,10 @@ export default {
       performance: '性能指标',
       avgResponse: '平均响应',
       averageTime: '平均时间',
+      active: '活跃',
+      ok: '正常',
+      err: '错误',
+      create: '创建',
       timeRange: '时间范围',
       granularity: '粒度',
       day: '按天',
@@ -1000,6 +1012,7 @@ export default {
       metricTokens: '按 Token',
       metricActualCost: '按实际消费',
       tokenUsageTrend: 'Token 使用趋势',
+      userUsageTrend: '用户使用趋势（前 12 名）',
       noDataAvailable: '暂无数据',
       model: '模型',
       group: '分组',
@@ -1792,6 +1805,13 @@ export default {
         tooltip: '启用后，当请求包含 MCP 工具时，会在 system prompt 中注入 XML 格式调用协议提示词。关闭此选项可避免对某些客户端造成干扰。',
         enabled: '已启用',
         disabled: '已禁用'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max 使用模拟',
+        tooltip: '启用后，对于没有上游 cache-write 用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1 小时缓存创建，同时保持总 token 数不变。',
+        enabled: '已启用（模拟 1 小时缓存）',
+        disabled: '已禁用',
+        hint: '仅调整使用记账日志中的 token 分类，不会持久化每次请求的映射状态。'
       },
       supportedScopes: {
         title: '支持的模型系列',

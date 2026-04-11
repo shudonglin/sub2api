@@ -35,3 +35,10 @@ exceptions:
     mitigation: "No proxy configuration in use; plan to upgrade axios when fix is released"
     expires_on: "2026-10-10"
     owner: "security@your-domain"
+  - package: axios
+    advisory: "GHSA-fvcv-3m26-pcqx"
+    severity: critical
+    reason: "axios cloud metadata exfiltration via header injection; app does not run on cloud instance metadata endpoints and does not forward user-controlled headers to axios requests"
+    mitigation: "No untrusted headers forwarded to axios; plan to upgrade axios when fix is released"
+    expires_on: "2026-10-11"
+    owner: "security@your-domain"
