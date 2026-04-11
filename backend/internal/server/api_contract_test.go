@@ -589,6 +589,24 @@ func TestAPIContracts(t *testing.T) {
 					"enable_metadata_passthrough": false,
 					"enable_metadata_userid_anonymization": false,
 					"enable_privacy_mode": true,
+					"payment_enabled": false,
+					"payment_min_amount": 0,
+					"payment_max_amount": 0,
+					"payment_daily_limit": 0,
+					"payment_order_timeout_minutes": 0,
+					"payment_max_pending_orders": 0,
+					"payment_enabled_types": null,
+					"payment_balance_disabled": false,
+					"payment_load_balance_strategy": "",
+					"payment_product_name_prefix": "",
+					"payment_product_name_suffix": "",
+					"payment_help_image_url": "",
+					"payment_help_text": "",
+					"payment_cancel_rate_limit_enabled": false,
+					"payment_cancel_rate_limit_max": 0,
+					"payment_cancel_rate_limit_window": 0,
+					"payment_cancel_rate_limit_unit": "",
+					"payment_cancel_rate_limit_window_mode": "",
 					"custom_menu_items": [],
 					"custom_endpoints": []
 				}
@@ -702,7 +720,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
-	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil)
+	adminSettingHandler := adminhandler.NewSettingHandler(settingService, nil, nil, nil, nil, nil)
 	adminAccountHandler := adminhandler.NewAccountHandler(adminService, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	jwtAuth := func(c *gin.Context) {
