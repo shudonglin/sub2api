@@ -142,3 +142,4 @@ output/
 deploy/data/
 .gstack/
 
+.worktrees/
