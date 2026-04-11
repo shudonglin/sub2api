@@ -460,7 +460,9 @@ export default {
     oauth: {
       code: 'Code',
       state: 'State',
-      fullUrl: 'Full URL'
+      fullUrl: 'Full URL',
+      callbackTitle: 'OAuth Callback',
+      callbackInstructions: 'Copy the code (and state if needed) back to the admin authorization flow.'
     },
     // Forgot password
     forgotPassword: 'Forgot password?',
@@ -931,6 +933,11 @@ export default {
   errors: {
     somethingWentWrong: 'Something went wrong',
     pageNotFound: 'Page not found',
+    pageNotFoundMessage: "The page you are looking for doesn't exist or has been moved.",
+    goBack: 'Go Back',
+    goToDashboard: 'Go to Dashboard',
+    needHelp: 'Need help?',
+    contactSupport: 'Contact support',
     unauthorized: 'Unauthorized',
     forbidden: 'Forbidden',
     serverError: 'Server error',
