@@ -93,6 +93,14 @@ services:
       - TOTP_ENCRYPTION_KEY=${TOTP_ENCRYPTION_KEY:-}
 
       # =======================================================================
+      # Provider Credential Encryption (REQUIRED in release mode)
+      # =======================================================================
+      # Used to encrypt upstream provider credentials (OAuth tokens, API keys)
+      # at rest in the database. Generate with: openssl rand -hex 32
+      # Startup fails in release mode when this is unset.
+      - SECURITY_CREDENTIAL_ENCRYPTION_KEY=${SECURITY_CREDENTIAL_ENCRYPTION_KEY:-}
+
+      # =======================================================================
       # Timezone
       # =======================================================================
       - TZ=${TZ:-Asia/Shanghai}
