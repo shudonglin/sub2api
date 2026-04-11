@@ -427,7 +427,7 @@ const exportToExcel = async () => {
   const c = new AbortController(); exportAbortController = c
   try {
     let p = 1; let total = pagination.total; let exportedCount = 0
-    const XLSX = await import('xlsx')
+    const XLSX = await import('@e965/xlsx')
     const headers = [
       t('usage.time'), t('admin.usage.user'), t('usage.apiKeyFilter'),
       t('admin.usage.account'), t('usage.model'), t('usage.upstreamModel'), t('usage.reasoningEffort'), t('admin.usage.group'),

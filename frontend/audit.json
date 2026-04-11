@@ -1,104 +1,546 @@
 {
   "actions": [
     {
-      "action": "review",
-      "module": "xlsx",
+      "action": "update",
       "resolves": [
         {
-          "id": 1108110,
-          "path": ".>xlsx",
+          "id": 1112455,
+          "path": ".>eslint-plugin-vue>vue-eslint-parser>lodash",
           "dev": false,
-          "bundled": false,
-          "optional": false
+          "optional": false,
+          "bundled": false
         },
         {
-          "id": 1108111,
-          "path": ".>xlsx",
+          "id": 1115806,
+          "path": ".>eslint-plugin-vue>vue-eslint-parser>lodash",
           "dev": false,
-          "bundled": false,
-          "optional": false
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115810,
+          "path": ".>eslint-plugin-vue>vue-eslint-parser>lodash",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "module": "lodash",
+      "target": "4.18.1",
+      "depth": 4
+    },
+    {
+      "action": "update",
+      "resolves": [
+        {
+          "id": 1115555,
+          "path": ".>@lobehub/icons>antd-style>@emotion/css>@emotion/babel-plugin>babel-plugin-macros>cosmiconfig>yaml",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ],
+      "module": "yaml",
+      "target": "1.10.3",
+      "depth": 8
+    },
+    {
+      "action": "review",
+      "module": "esbuild",
+      "resolves": [
+        {
+          "id": 1102341,
+          "path": ".>vite>esbuild",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    },
+    {
+      "action": "review",
+      "module": "ajv",
+      "resolves": [
+        {
+          "id": 1113714,
+          "path": ".>eslint>ajv",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    },
+    {
+      "action": "review",
+      "module": "dompurify",
+      "resolves": [
+        {
+          "id": 1115529,
+          "path": ".>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115668,
+          "path": ".>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115921,
+          "path": ".>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        },
+        {
+          "id": 1115922,
+          "path": ".>dompurify",
+          "dev": false,
+          "optional": false,
+          "bundled": false
+        }
+      ]
+    },
+    {
+      "action": "review",
+      "module": "vite",
+      "resolves": [
+        {
+          "id": 1116229,
+          "path": ".>vite",
+          "dev": false,
+          "optional": false,
+          "bundled": false
         }
       ]
     }
   ],
   "advisories": {
-    "1108110": {
+    "1102341": {
       "findings": [
         {
-          "version": "0.18.5",
+          "version": "0.21.5",
           "paths": [
-            ".>xlsx"
+            ".>vite>esbuild"
           ]
         }
       ],
       "found_by": null,
       "deleted": null,
-      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2023-30533\n- https://cdn.sheetjs.com/advisories/CVE-2023-30533\n- https://git.sheetjs.com/sheetjs/sheetjs/src/branch/master/CHANGELOG.md\n- https://git.sheetjs.com/sheetjs/sheetjs/issues/2667\n- https://git.sheetjs.com/sheetjs/sheetjs/issues/2986\n- https://cdn.sheetjs.com\n- https://github.com/advisories/GHSA-4r6h-8v6p-xvw6",
-      "created": "2023-04-24T09:30:19.000Z",
-      "id": 1108110,
+      "references": "- https://github.com/evanw/esbuild/security/advisories/GHSA-67mh-4wv8-2f99\n- https://github.com/evanw/esbuild/commit/de85afd65edec9ebc44a11e245fd9e9a2e99760d\n- https://github.com/advisories/GHSA-67mh-4wv8-2f99",
+      "created": "2025-02-10T17:48:07.000Z",
+      "id": 1102341,
       "npm_advisory_id": null,
-      "overview": "All versions of SheetJS CE through 0.19.2 are vulnerable to \"Prototype Pollution\" when reading specially crafted files. Workflows that do not read arbitrary files (for example, exporting data to spreadsheet files) are unaffected.\n\nA non-vulnerable version cannot be found via npm, as the repository hosted on GitHub and the npm package `xlsx` are no longer maintained. Version 0.19.3 can be downloaded via https://cdn.sheetjs.com/.",
+      "overview": "### Summary\n\nesbuild allows any websites to send any request to the development server and read the response due to default CORS settings.\n\n### Details\n\nesbuild sets `Access-Control-Allow-Origin: *` header to all requests, including the SSE connection, which allows any websites to send any request to the development server and read the response.\n\nhttps://github.com/evanw/esbuild/blob/df815ac27b84f8b34374c9182a93c94718f8a630/pkg/api/serve_other.go#L121\nhttps://github.com/evanw/esbuild/blob/df815ac27b84f8b34374c9182a93c94718f8a630/pkg/api/serve_other.go#L363\n\n**Attack scenario**:\n\n1. The attacker serves a malicious web page (`http://malicious.example.com`).\n1. The user accesses the malicious web page.\n1. The attacker sends a `fetch('http://127.0.0.1:8000/main.js')` request by JS in that malicious web page. This request is normally blocked by same-origin policy, but that's not the case for the reasons above.\n1. The attacker gets the content of `http://127.0.0.1:8000/main.js`.\n\nIn this scenario, I assumed that the attacker knows the URL of the bundle output file name. But the attacker can also get that information by\n\n- Fetching `/index.html`: normally you have a script tag here\n- Fetching `/assets`: it's common to have a `assets` directory when you have JS files and CSS files in a different directory and the directory listing feature tells the attacker the list of files\n- Connecting `/esbuild` SSE endpoint: the SSE endpoint sends the URL path of the changed files when the file is changed (`new EventSource('/esbuild').addEventListener('change', e => console.log(e.type, e.data))`)\n- Fetching URLs in the known file: once the attacker knows one file, the attacker can know the URLs imported from that file\n\nThe scenario above fetches the compiled content, but if the victim has the source map option enabled, the attacker can also get the non-compiled content by fetching the source map file.\n\n### PoC\n\n1. Download [reproduction.zip](https://github.com/user-attachments/files/18561484/reproduction.zip)\n2. Extract it and move to that directory\n1. Run `npm i`\n1. Run `npm run watch`\n1. Run `fetch('http://127.0.0.1:8000/app.js').then(r => r.text()).then(content => console.log(content))` in a different website's dev tools.\n\n![image](https://github.com/user-attachments/assets/08fc2e4d-e1ec-44ca-b0ea-78a73c3c40e9)\n\n### Impact\n\nUsers using the serve feature may get the source code stolen by malicious websites.",
       "reported_by": null,
-      "title": "Prototype Pollution in sheetJS",
+      "title": "esbuild enables any website to send any requests to the development server and read the response",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "esbuild",
+      "vulnerable_versions": "<=0.24.2",
+      "github_advisory_id": "GHSA-67mh-4wv8-2f99",
+      "recommendation": "Upgrade to version 0.25.0 or later",
+      "patched_versions": ">=0.25.0",
+      "updated": "2025-02-10T17:48:08.000Z",
+      "cvss": {
+        "score": 5.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N"
+      },
+      "cwe": [
+        "CWE-346"
+      ],
+      "url": "https://github.com/advisories/GHSA-67mh-4wv8-2f99"
+    },
+    "1112455": {
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            ".>eslint-plugin-vue>vue-eslint-parser>lodash"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/lodash/lodash/security/advisories/GHSA-xxjr-mmjv-4gpg\n- https://nvd.nist.gov/vuln/detail/CVE-2025-13465\n- https://github.com/lodash/lodash/commit/edadd452146f7e4bad4ea684e955708931d84d81\n- https://github.com/advisories/GHSA-xxjr-mmjv-4gpg",
+      "created": "2026-01-21T23:01:22.000Z",
+      "id": 1112455,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nLodash versions 4.0.0 through 4.17.22 are vulnerable to prototype pollution in the `_.unset` and `_.omit` functions. An attacker can pass crafted paths which cause Lodash to delete methods from global prototypes. \n\nThe issue permits deletion of properties but does not allow overwriting their original behavior.  \n\n### Patches\n\nThis issue is patched on 4.17.23.",
+      "reported_by": null,
+      "title": "Lodash has Prototype Pollution Vulnerability in `_.unset` and `_.omit` functions",
       "metadata": null,
       "cves": [
-        "CVE-2023-30533"
+        "CVE-2025-13465"
       ],
       "access": "public",
-      "severity": "high",
-      "module_name": "xlsx",
-      "vulnerable_versions": "<0.19.3",
-      "github_advisory_id": "GHSA-4r6h-8v6p-xvw6",
-      "recommendation": "None",
-      "patched_versions": "<0.0.0",
-      "updated": "2025-09-19T15:23:41.000Z",
+      "severity": "moderate",
+      "module_name": "lodash",
+      "vulnerable_versions": ">=4.0.0 <=4.17.22",
+      "github_advisory_id": "GHSA-xxjr-mmjv-4gpg",
+      "recommendation": "Upgrade to version 4.17.23 or later",
+      "patched_versions": ">=4.17.23",
+      "updated": "2026-01-21T23:01:23.000Z",
       "cvss": {
-        "score": 7.8,
-        "vectorString": "CVSS:3.1/AV:L/AC:L/PR:N/UI:R/S:U/C:H/I:H/A:H"
+        "score": 6.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
       },
       "cwe": [
         "CWE-1321"
       ],
-      "url": "https://github.com/advisories/GHSA-4r6h-8v6p-xvw6"
+      "url": "https://github.com/advisories/GHSA-xxjr-mmjv-4gpg"
     },
-    "1108111": {
+    "1113714": {
       "findings": [
         {
-          "version": "0.18.5",
+          "version": "6.12.6",
           "paths": [
-            ".>xlsx"
+            ".>eslint>ajv"
           ]
         }
       ],
       "found_by": null,
       "deleted": null,
-      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2024-22363\n- https://cdn.sheetjs.com/advisories/CVE-2024-22363\n- https://cwe.mitre.org/data/definitions/1333.html\n- https://git.sheetjs.com/sheetjs/sheetjs/src/tag/v0.20.2\n- https://cdn.sheetjs.com\n- https://github.com/advisories/GHSA-5pgg-2g8v-p4x9",
-      "created": "2024-04-05T06:30:46.000Z",
-      "id": 1108111,
+      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2025-69873\n- https://github.com/EthanKim88/ethan-cve-disclosures/blob/main/CVE-2025-69873-ajv-ReDoS.md\n- https://github.com/ajv-validator/ajv/pull/2586\n- https://github.com/ajv-validator/ajv/commit/720a23fa453ffae8340e92c9b0fe886c54cfe0d5\n- https://github.com/ajv-validator/ajv/releases/tag/v8.18.0\n- https://github.com/ajv-validator/ajv/pull/2588\n- https://github.com/ajv-validator/ajv/releases/tag/v6.14.0\n- https://github.com/advisories/GHSA-2g4f-4pwh-qvx6\n- https://github.com/ajv-validator/ajv/pull/2590\n- https://github.com/github/advisory-database/pull/6991",
+      "created": "2026-02-11T21:30:39.000Z",
+      "id": 1113714,
       "npm_advisory_id": null,
-      "overview": "SheetJS Community Edition before 0.20.2 is vulnerable.to Regular Expression Denial of Service (ReDoS).\n\nA non-vulnerable version cannot be found via npm, as the repository hosted on GitHub and the npm package `xlsx` are no longer maintained. Version 0.20.2 can be downloaded via https://cdn.sheetjs.com/.",
+      "overview": "ajv (Another JSON Schema Validator) through version 8.17.1 is vulnerable to Regular Expression Denial of Service (ReDoS) when the `$data` option is enabled. The pattern keyword accepts runtime data via JSON Pointer syntax (`$data` reference), which is passed directly to the JavaScript `RegExp()` constructor without validation. An attacker can inject a malicious regex pattern (e.g., `\\\"^(a|a)*$\\\"`) combined with crafted input to cause catastrophic backtracking. A 31-character payload causes approximately 44 seconds of CPU blocking, with each additional character doubling execution time. This enables complete denial of service with a single HTTP request against any API using ajv with `$data`: true for dynamic schema validation.",
       "reported_by": null,
-      "title": "SheetJS Regular Expression Denial of Service (ReDoS)",
+      "title": "ajv has ReDoS when using `$data` option",
       "metadata": null,
       "cves": [
-        "CVE-2024-22363"
+        "CVE-2025-69873"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "ajv",
+      "vulnerable_versions": "<6.14.0",
+      "github_advisory_id": "GHSA-2g4f-4pwh-qvx6",
+      "recommendation": "Upgrade to version 6.14.0 or later",
+      "patched_versions": ">=6.14.0",
+      "updated": "2026-03-02T21:58:41.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-400",
+        "CWE-1333"
+      ],
+      "url": "https://github.com/advisories/GHSA-2g4f-4pwh-qvx6"
+    },
+    "1115529": {
+      "findings": [
+        {
+          "version": "3.3.1",
+          "paths": [
+            ".>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-h8r8-wccr-v5f2\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-h8r8-wccr-v5f2",
+      "created": "2026-03-27T20:41:29.000Z",
+      "id": 1115529,
+      "npm_advisory_id": null,
+      "overview": "## Description\n\nA mutation-XSS (mXSS) condition was confirmed when sanitized HTML is reinserted into a new parsing context using `innerHTML` and special wrappers. The vulnerable wrappers confirmed in browser behavior are `script`, `xmp`, `iframe`, `noembed`, `noframes`, and `noscript`. The payload remains seemingly benign after `DOMPurify.sanitize()`, but mutates during the second parse into executable markup with an event handler, enabling JavaScript execution in the client (`alert(1)` in the PoC).\n\n\n## Vulnerability\n\nThe root cause is context switching after sanitization: sanitized output is treated as trusted and concatenated into a wrapper string (for example, `<xmp> ... </xmp>` or other special wrappers) before being reparsed by the browser. In this flow, attacker-controlled text inside an attribute (for example `</xmp>` or equivalent closing sequences for each wrapper) closes the special parsing context early and reintroduces attacker markup (`<img ... onerror=...>`) outside the original attribute context. DOMPurify sanitizes the original parse tree, but the application performs a second parse in a different context, reactivating dangerous tokens (classic mXSS pattern).\n\n## PoC\n\n1. Start the PoC app:\n```bash\nnpm install\nnpm start\n```\n\n2. Open `http://localhost:3001`.\n3. Set `Wrapper en sink` to `xmp`.\n4. Use payload:\n```html\n <img src=x alt=\"</xmp><img src=x onerror=alert('expoc')>\">\n```\n\n5. Click `Sanitize + Render`.\n6. Observe:\n- `Sanitized response` still contains the `</xmp>` sequence inside `alt`.\n- The sink reparses to include `<img src=\"x\" onerror=\"alert('expoc')\">`.\n- `alert('expoc')` is triggered.\n7. Files:\n- index.html\n\n```html\n<!doctype html>\n<html lang=\"en\">\n  <head>\n    <meta charset=\"utf-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n    <title>expoc - DOMPurify SSR PoC</title>\n    <style>\n      :root {\n        --bg: #f7f8fb;\n        --panel: #ffffff;\n        --line: #d8dce6;\n        --text: #0f172a;\n        --muted: #475569;\n        --accent: #0ea5e9;\n      }\n\n      * {\n        box-sizing: border-box;\n      }\n\n      body {\n        margin: 0;\n        font-family: \"SF Mono\", Menlo, Consolas, monospace;\n        color: var(--text);\n        background: radial-gradient(circle at 10% 0%, #e0f2fe 0%, var(--bg) 60%);\n      }\n\n      main {\n        max-width: 980px;\n        margin: 28px auto;\n        padding: 0 16px 20px;\n      }\n\n      h1 {\n        margin: 0 0 10px;\n        font-size: 1.45rem;\n      }\n\n      p {\n        margin: 0;\n        color: var(--muted);\n      }\n\n      .grid {\n        display: grid;\n        gap: 14px;\n        margin-top: 16px;\n      }\n\n      .card {\n        background: var(--panel);\n        border: 1px solid var(--line);\n        border-radius: 12px;\n        padding: 14px;\n      }\n\n      label {\n        display: block;\n        margin-bottom: 7px;\n        font-size: 0.85rem;\n        color: var(--muted);\n      }\n\n      textarea,\n      input,\n      select,\n      button {\n        width: 100%;\n        border: 1px solid var(--line);\n        border-radius: 8px;\n        padding: 9px 10px;\n        font: inherit;\n        background: #fff;\n      }\n\n      textarea {\n        min-height: 110px;\n        resize: vertical;\n      }\n\n      .row {\n        display: grid;\n        grid-template-columns: 1fr 230px;\n        gap: 12px;\n      }\n\n      button {\n        cursor: pointer;\n        background: var(--accent);\n        color: #fff;\n        border-color: #0284c7;\n      }\n\n      #sink {\n        min-height: 90px;\n        border: 1px dashed #94a3b8;\n        border-radius: 8px;\n        padding: 10px;\n        background: #f8fafc;\n      }\n\n      pre {\n        margin: 0;\n        white-space: pre-wrap;\n        word-break: break-word;\n      }\n\n      .note {\n        margin-top: 8px;\n        font-size: 0.85rem;\n      }\n\n      .status-grid {\n        display: grid;\n        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));\n        gap: 8px;\n        margin-top: 10px;\n      }\n\n      .status-item {\n        border: 1px solid var(--line);\n        border-radius: 8px;\n        padding: 8px 10px;\n        font-size: 0.85rem;\n        background: #fff;\n      }\n\n      .status-item.vuln {\n        border-color: #ef4444;\n        background: #fef2f2;\n      }\n\n      .status-item.safe {\n        border-color: #22c55e;\n        background: #f0fdf4;\n      }\n\n      @media (max-width: 760px) {\n        .row {\n          grid-template-columns: 1fr;\n        }\n      }\n    </style>\n  </head>\n  <body>\n    <main>\n      <h1>expoc - DOMPurify Server-Side PoC</h1>\n      <p>\n        Flujo: input -> POST /sanitize (Node + jsdom + DOMPurify) -> render vulnerable con innerHTML.\n      </p>\n\n      <div class=\"grid\">\n        <section class=\"card\">\n          <label for=\"payload\">Payload</label>\n          <textarea id=\"payload\"><img src=x alt=\"</script><img src=x onerror=alert('expoc')>\"></textarea>\n          <div class=\"row\" style=\"margin-top: 10px;\">\n            <div>\n              <label for=\"wrapper\">Wrapper en sink</label>\n              <select id=\"wrapper\">\n                <option value=\"div\">div</option>\n                <option value=\"textarea\">textarea</option>\n                <option value=\"title\">title</option>\n                <option value=\"style\">style</option>\n                <option value=\"script\" selected>script</option>\n                <option value=\"xmp\">xmp</option>\n                <option value=\"iframe\">iframe</option>\n                <option value=\"noembed\">noembed</option>\n                <option value=\"noframes\">noframes</option>\n                <option value=\"noscript\">noscript</option>\n              </select>\n            </div>\n            <div style=\"display:flex;align-items:end;\">\n              <button id=\"run\" type=\"button\">Sanitize + Render</button>\n            </div>\n          </div>\n          <p class=\"note\">Se usa render vulnerable: <code>sink.innerHTML = '&lt;wrapper&gt;' + sanitized + '&lt;/wrapper&gt;'</code>.</p>\n          <div class=\"status-grid\">\n            <div class=\"status-item vuln\">script (vulnerable)</div>\n            <div class=\"status-item vuln\">xmp (vulnerable)</div>\n            <div class=\"status-item vuln\">iframe (vulnerable)</div>\n            <div class=\"status-item vuln\">noembed (vulnerable)</div>\n            <div class=\"status-item vuln\">noframes (vulnerable)</div>\n            <div class=\"status-item vuln\">noscript (vulnerable)</div>\n            <div class=\"status-item safe\">div (no vulnerable)</div>\n            <div class=\"status-item safe\">textarea (no vulnerable)</div>\n            <div class=\"status-item safe\">title (no vulnerable)</div>\n            <div class=\"status-item safe\">style (no vulnerable)</div>\n          </div>\n        </section>\n\n        <section class=\"card\">\n          <label>Sanitized response</label>\n          <pre id=\"sanitized\">(empty)</pre>\n        </section>\n\n        <section class=\"card\">\n          <label>Sink</label>\n          <div id=\"sink\"></div>\n        </section>\n      </div>\n    </main>\n\n    <script>\n      const payload = document.getElementById('payload');\n      const wrapper = document.getElementById('wrapper');\n      const run = document.getElementById('run');\n      const sanitizedNode = document.getElementById('sanitized');\n      const sink = document.getElementById('sink');\n\n      run.addEventListener('click', async () => {\n        const response = await fetch('/sanitize', {\n          method: 'POST',\n          headers: { 'Content-Type': 'application/json' },\n          body: JSON.stringify({ input: payload.value })\n        });\n\n        const data = await response.json();\n        const sanitized = data.sanitized || '';\n        const w = wrapper.value;\n\n        sanitizedNode.textContent = sanitized;\n        sink.innerHTML = '<' + w + '>' + sanitized + '</' + w + '>';\n      });\n    </script>\n  </body>\n</html>\n```\n\n- server.js\n\n```js\nconst express = require('express');\nconst path = require('path');\nconst { JSDOM } = require('jsdom');\nconst createDOMPurify = require('dompurify');\n\nconst app = express();\nconst port = process.env.PORT || 3001;\n\nconst window = new JSDOM('').window;\nconst DOMPurify = createDOMPurify(window);\n\napp.use(express.json());\napp.use(express.static(path.join(__dirname, 'public')));\n\napp.get('/health', (_req, res) => {\n  res.json({ ok: true, service: 'expoc' });\n});\n\napp.post('/sanitize', (req, res) => {\n  const input = typeof req.body?.input === 'string' ? req.body.input : '';\n  const sanitized = DOMPurify.sanitize(input);\n  res.json({ sanitized });\n});\n\napp.listen(port, () => {\n  console.log(`expoc running at http://localhost:${port}`);\n});\n```\n\n- package.json\n\n```json\n{\n  \"name\": \"expoc\",\n  \"version\": \"1.0.0\",\n  \"main\": \"server.js\",\n  \"scripts\": {\n    \"test\": \"echo \\\"Error: no test specified\\\" && exit 1\",\n    \"start\": \"node server.js\",\n    \"dev\": \"node server.js\"\n  },\n  \"keywords\": [],\n  \"author\": \"\",\n  \"license\": \"ISC\",\n  \"description\": \"\",\n  \"dependencies\": {\n    \"dompurify\": \"^3.3.1\",\n    \"express\": \"^5.2.1\",\n    \"jsdom\": \"^28.1.0\"\n  }\n}\n```\n\n## Evidence\n\n- PoC\n\n[daft-video.webm](https://github.com/user-attachments/assets/499a593d-0241-4ab8-95a9-cf49a00bda90)\n\n- XSS triggered\n<img width=\"2746\" height=\"1588\" alt=\"daft-img\" src=\"https://github.com/user-attachments/assets/1f463c14-d5a3-4c93-94e4-12d2d02c7d15\" />\n\n## Why This Happens\nThis is a mutation-XSS pattern caused by a parse-context mismatch:\n\n- Parse 1 (sanitization phase): input is interpreted under normal HTML parsing rules.\n- Parse 2 (sink phase): sanitized output is embedded into a wrapper that changes parser state (`xmp` raw-text behavior).\n- Attacker-controlled sequence (`</xmp>`) gains structural meaning in parse 2 and alters DOM structure.\n\nSanitization is not a universal guarantee across all future parsing contexts. The sink design reintroduces risk.\n\n## Remediation Guidance\n1. Do not concatenate sanitized strings into new HTML wrappers followed by `innerHTML`.\n2. Keep the rendering context stable from sanitize to sink.\n3. Prefer DOM-safe APIs (`textContent`, `createElement`, `setAttribute`) over string-based HTML composition.\n4. If HTML insertion is required, sanitize as close as possible to final insertion context and avoid wrapper constructs with raw-text semantics (`xmp`, `script`, etc.).\n5. Add regression tests for context-switch/mXSS payloads (including `</xmp>`, `</noscript>`, similar parser-breakout markers).\n\nReported by Oscar Uribe, Security Researcher at Fluid Attacks. Camilo Vera and Cristian Vargas from the Fluid Attacks Research Team have identified a mXSS via Re-Contextualization in DomPurify 3.3.1.\n\nFollowing Fluid Attacks [Disclosure Policy](https://fluidattacks.com/advisories/policy), if this report corresponds to a vulnerability and the conditions outlined in the policy are met, this advisory will be published on the website over the next few days (the timeline may vary depending on maintainers' willingness to attend to and respond to this report) at the following URL: https://fluidattacks.com/advisories/daft\n\nAcknowledgements: [Camilo Vera](https://github.com/caverav/) and [Cristian Vargas](https://github.com/tachote).",
+      "reported_by": null,
+      "title": "DOMPurify is vulnerable to mutation-XSS via Re-Contextualization ",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<3.3.2",
+      "github_advisory_id": "GHSA-h8r8-wccr-v5f2",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-03-27T20:41:31.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-79"
+      ],
+      "url": "https://github.com/advisories/GHSA-h8r8-wccr-v5f2"
+    },
+    "1115555": {
+      "findings": [
+        {
+          "version": "1.10.2",
+          "paths": [
+            ".>@lobehub/icons>antd-style>@emotion/css>@emotion/babel-plugin>babel-plugin-macros>cosmiconfig>yaml"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/eemeli/yaml/security/advisories/GHSA-48c2-rrv3-qjmp\n- https://github.com/eemeli/yaml/commit/1e84ebbea7ec35011a4c61bbb820a529ee4f359b\n- https://github.com/eemeli/yaml/releases/tag/v1.10.3\n- https://github.com/eemeli/yaml/releases/tag/v2.8.3\n- https://nvd.nist.gov/vuln/detail/CVE-2026-33532\n- https://github.com/advisories/GHSA-48c2-rrv3-qjmp",
+      "created": "2026-03-25T20:08:24.000Z",
+      "id": 1115555,
+      "npm_advisory_id": null,
+      "overview": "Parsing a YAML document with `yaml` may throw a RangeError due to a stack overflow.\n\nThe node resolution/composition phase uses recursive function calls without a depth bound. An attacker who can supply YAML for parsing can trigger a `RangeError: Maximum call stack size exceeded` with a small payload (~2–10 KB). The `RangeError` is not a `YAMLParseError`, so applications that only catch YAML-specific errors will encounter an unexpected exception type. Depending on the host application's exception handling, this can fail requests or terminate the Node.js process.\n\nFlow sequences allow deep nesting with minimal bytes (2 bytes per level: one `[` and one `]`). On the default Node.js stack, approximately 1,000–5,000 levels of nesting (2–10 KB input) exhaust the call stack. The exact threshold is environment-dependent (Node.js version, stack size, call stack depth at invocation).\n\nNote: the library's `Parser` (CST phase) uses a stack-based iterative approach and is not affected. Only the compose/resolve phase uses actual call-stack recursion.\n\nAll three public parsing APIs are affected: `YAML.parse()`, `YAML.parseDocument()`, and `YAML.parseAllDocuments()`.\n\n### PoC\n\n```javascript\nconst YAML = require('yaml');\n\n// ~10 KB payload: 5000 levels of nested flow sequences\nconst payload = '['.repeat(5000) + '1' + ']'.repeat(5000);\n\ntry {\n  YAML.parse(payload);\n} catch (e) {\n  console.log(e.constructor.name); // RangeError (NOT YAMLParseError)\n  console.log(e.message);          // Maximum call stack size exceeded\n}\n```\n\nTest environment: Node.js v24.12.0, macOS darwin arm64\n\n| Version | Nesting Depth | Input Size | Result |\n|---|---|---|---|\n| 1.0.0 | 5,000 | 10,001 B | RangeError |\n| 1.10.2 | 5,000 | 10,001 B | RangeError |\n| 2.0.0 | 5,000 | 10,001 B | RangeError |\n| 2.8.2 | 5,000 | 10,001 B | RangeError |\n| 2.8.3 | 5,000 | 10,001 B | YAMLParseError |\n\nDepth threshold on yaml 2.8.2:\n\n| Nesting Depth | Input Size | Result |\n|---|---|---|\n| 500 | 1,001 B | Parses successfully |\n| 1,000 | 2,001 B | RangeError (threshold varies by stack size) |\n| 5,000 | 10,001 B | RangeError |",
+      "reported_by": null,
+      "title": "yaml is vulnerable to Stack Overflow via deeply nested YAML collections",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-33532"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "yaml",
+      "vulnerable_versions": ">=1.0.0 <1.10.3",
+      "github_advisory_id": "GHSA-48c2-rrv3-qjmp",
+      "recommendation": "Upgrade to version 1.10.3 or later",
+      "patched_versions": ">=1.10.3",
+      "updated": "2026-03-27T21:34:54.000Z",
+      "cvss": {
+        "score": 4.3,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:L"
+      },
+      "cwe": [
+        "CWE-674"
+      ],
+      "url": "https://github.com/advisories/GHSA-48c2-rrv3-qjmp"
+    },
+    "1115668": {
+      "findings": [
+        {
+          "version": "3.3.1",
+          "paths": [
+            ".>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://nvd.nist.gov/vuln/detail/CVE-2026-0540\n- https://github.com/cure53/DOMPurify/commit/fca0a938b4261ddc9c0293a289935a9029c049f5\n- https://github.com/cure53/DOMPurify\n- https://www.vulncheck.com/advisories/dompurify-xss-via-missing-rawtext-elements-in-safe-for-xml\n- https://github.com/cure53/DOMPurify/commit/302b51de22535cc90235472c52e3401bedd46f80\n- https://fluidattacks.com/advisories/daft\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-v2wj-7wpq-c8vv",
+      "created": "2026-03-03T18:31:33.000Z",
+      "id": 1115668,
+      "npm_advisory_id": null,
+      "overview": "DOMPurify 3.1.3 through 3.3.1 and 2.5.3 through 2.5.8, fixed in 2.5.9 and 3.3.2, contain a cross-site scripting vulnerability that allows attackers to bypass attribute sanitization by exploiting five missing rawtext elements (noscript, xmp, noembed, noframes, iframe) in the `SAFE_FOR_XML` regex. Attackers can include payloads like `</noscript><img src=x onerror=alert(1)>` in attribute values to execute JavaScript when sanitized output is placed inside these unprotected rawtext contexts.",
+      "reported_by": null,
+      "title": "DOMPurify contains a Cross-site Scripting vulnerability",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-0540"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": ">=3.1.3 <=3.3.1",
+      "github_advisory_id": "GHSA-v2wj-7wpq-c8vv",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-03-30T14:51:32.000Z",
+      "cvss": {
+        "score": 6.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+      },
+      "cwe": [
+        "CWE-79"
+      ],
+      "url": "https://github.com/advisories/GHSA-v2wj-7wpq-c8vv"
+    },
+    "1115806": {
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            ".>eslint-plugin-vue>vue-eslint-parser>lodash"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/lodash/lodash/security/advisories/GHSA-r5fr-rjxr-66jc\n- https://nvd.nist.gov/vuln/detail/CVE-2026-4800\n- https://github.com/lodash/lodash/commit/3469357cff396a26c363f8c1b5a91dde28ba4b1c\n- https://cna.openjsf.org/security-advisories.html\n- https://github.com/advisories/GHSA-35jh-r3h4-6jhm\n- https://github.com/advisories/GHSA-r5fr-rjxr-66jc",
+      "created": "2026-04-01T23:51:12.000Z",
+      "id": 1115806,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nThe fix for [CVE-2021-23337](https://github.com/advisories/GHSA-35jh-r3h4-6jhm) added validation for the `variable` option in `_.template` but did not apply the same validation to `options.imports` key names. Both paths flow into the same `Function()` constructor sink.\n\nWhen an application passes untrusted input as `options.imports` key names, an attacker can inject default-parameter expressions that execute arbitrary code at template compilation time.\n\nAdditionally, `_.template` uses `assignInWith` to merge imports, which enumerates inherited properties via `for..in`. If `Object.prototype` has been polluted by any other vector, the polluted keys are copied into the imports object and passed to `Function()`.\n\n### Patches\n\nUsers should upgrade to version 4.18.0.\n\nThe fix applies two changes:\n1. Validate `importsKeys` against the existing `reForbiddenIdentifierChars` regex (same check already used for the `variable` option)\n2. Replace `assignInWith` with `assignWith` when merging imports, so only own properties are enumerated\n\n### Workarounds\n\nDo not pass untrusted input as key names in `options.imports`. Only use developer-controlled, static key names.",
+      "reported_by": null,
+      "title": "lodash vulnerable to Code Injection via `_.template` imports key names",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-4800"
       ],
       "access": "public",
       "severity": "high",
-      "module_name": "xlsx",
-      "vulnerable_versions": "<0.20.2",
-      "github_advisory_id": "GHSA-5pgg-2g8v-p4x9",
-      "recommendation": "None",
-      "patched_versions": "<0.0.0",
-      "updated": "2025-09-19T15:23:26.000Z",
+      "module_name": "lodash",
+      "vulnerable_versions": ">=4.0.0 <=4.17.23",
+      "github_advisory_id": "GHSA-r5fr-rjxr-66jc",
+      "recommendation": "Upgrade to version 4.18.0 or later",
+      "patched_versions": ">=4.18.0",
+      "updated": "2026-04-01T23:51:13.000Z",
       "cvss": {
-        "score": 7.5,
-        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+        "score": 8.1,
+        "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
       },
       "cwe": [
-        "CWE-1333"
+        "CWE-94"
       ],
-      "url": "https://github.com/advisories/GHSA-5pgg-2g8v-p4x9"
+      "url": "https://github.com/advisories/GHSA-r5fr-rjxr-66jc"
+    },
+    "1115810": {
+      "findings": [
+        {
+          "version": "4.17.21",
+          "paths": [
+            ".>eslint-plugin-vue>vue-eslint-parser>lodash"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/lodash/lodash/security/advisories/GHSA-f23m-r3pf-42rh\n- https://github.com/lodash/lodash/security/advisories/GHSA-xxjr-mmjv-4gpg\n- https://nvd.nist.gov/vuln/detail/CVE-2026-2950\n- https://github.com/advisories/GHSA-f23m-r3pf-42rh",
+      "created": "2026-04-01T23:50:27.000Z",
+      "id": 1115810,
+      "npm_advisory_id": null,
+      "overview": "### Impact\n\nLodash versions 4.17.23 and earlier are vulnerable to prototype pollution in the `_.unset` and `_.omit` functions. The fix for [CVE-2025-13465](https://github.com/lodash/lodash/security/advisories/GHSA-xxjr-mmjv-4gpg) only guards against string key members, so an attacker can bypass the check by passing array-wrapped path segments. This allows deletion of properties from built-in prototypes such as `Object.prototype`, `Number.prototype`, and `String.prototype`.\n\nThe issue permits deletion of prototype properties but does not allow overwriting their original behavior.\n\n### Patches\n\nThis issue is patched in 4.18.0.\n\n### Workarounds\n\nNone. Upgrade to the patched version.",
+      "reported_by": null,
+      "title": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-2950"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "lodash",
+      "vulnerable_versions": "<=4.17.23",
+      "github_advisory_id": "GHSA-f23m-r3pf-42rh",
+      "recommendation": "Upgrade to version 4.18.0 or later",
+      "patched_versions": ">=4.18.0",
+      "updated": "2026-04-01T23:50:28.000Z",
+      "cvss": {
+        "score": 6.5,
+        "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+      },
+      "cwe": [
+        "CWE-1321"
+      ],
+      "url": "https://github.com/advisories/GHSA-f23m-r3pf-42rh"
+    },
+    "1115921": {
+      "findings": [
+        {
+          "version": "3.3.1",
+          "paths": [
+            ".>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-cjmm-f4jc-qw8r\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-cjmm-f4jc-qw8r",
+      "created": "2026-04-03T03:46:07.000Z",
+      "id": 1115921,
+      "npm_advisory_id": null,
+      "overview": "## Summary\nDOMPurify allows `ADD_ATTR` to be provided as a predicate function via `EXTRA_ELEMENT_HANDLING.attributeCheck`. When the predicate returns `true`, `_isValidAttribute` short-circuits the attribute check before URI-safe validation runs. An attacker who supplies a predicate that accepts specific attribute/tag combinations can then sanitize input such as `<a href=\"javascript:alert(document.domain)\">` and have the `javascript:` URL survive, because URI validation is skipped for that attribute while other checks still pass. The provided PoC accepts `href` for anchors and then triggers a click inside an iframe, showing that the sanitized payload executes despite the protocol bypass.\n\n## Impact\nPredicate-based allowlisting bypasses DOMPurify's URI validation, allowing unsafe protocols such as `javascript:` to reach the DOM and execute whenever the link is activated, resulting in DOM-based XSS.\n\n## Credits\nIdentified by Cantina’s Apex (https://www.cantina.security).",
+      "reported_by": null,
+      "title": "DOMPurify ADD_ATTR predicate skips URI validation",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<=3.3.1",
+      "github_advisory_id": "GHSA-cjmm-f4jc-qw8r",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-04-03T03:46:08.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-183"
+      ],
+      "url": "https://github.com/advisories/GHSA-cjmm-f4jc-qw8r"
+    },
+    "1115922": {
+      "findings": [
+        {
+          "version": "3.3.1",
+          "paths": [
+            ".>dompurify"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/cure53/DOMPurify/security/advisories/GHSA-cj63-jhhr-wcxv\n- https://github.com/cure53/DOMPurify/releases/tag/3.3.2\n- https://github.com/advisories/GHSA-cj63-jhhr-wcxv",
+      "created": "2026-04-03T03:45:08.000Z",
+      "id": 1115922,
+      "npm_advisory_id": null,
+      "overview": "## Summary\nWhen `USE_PROFILES` is enabled, DOMPurify rebuilds `ALLOWED_ATTR` as a plain array before populating it with the requested allowlists. Because the sanitizer still looks up attributes via `ALLOWED_ATTR[lcName]`, any `Array.prototype` property that is polluted also counts as an allowlisted attribute. An attacker who can set `Array.prototype.onclick = true` (or a runtime already subject to prototype pollution) can thus force DOMPurify to keep event handlers such as `onclick` even when they are normally forbidden. The provided PoC sanitizes `<img onclick=...>` with `USE_PROFILES` and adds the sanitized output to the DOM; the polluted prototype allows the event handler to survive and execute, turning what should be a blocklist into a silent XSS vector.\n\n## Impact\nPrototype pollution makes DOMPurify accept dangerous event handler attributes, which bypasses the sanitizer and results in DOM-based XSS once the sanitized markup is rendered.\n\n## Credits\nIdentified by Cantina’s Apex (https://www.cantina.security).",
+      "reported_by": null,
+      "title": "DOMPurify USE_PROFILES prototype pollution allows event handlers",
+      "metadata": null,
+      "cves": [],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "dompurify",
+      "vulnerable_versions": "<=3.3.1",
+      "github_advisory_id": "GHSA-cj63-jhhr-wcxv",
+      "recommendation": "Upgrade to version 3.3.2 or later",
+      "patched_versions": ">=3.3.2",
+      "updated": "2026-04-03T03:45:08.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-1321"
+      ],
+      "url": "https://github.com/advisories/GHSA-cj63-jhhr-wcxv"
+    },
+    "1116229": {
+      "findings": [
+        {
+          "version": "5.4.21",
+          "paths": [
+            ".>vite"
+          ]
+        }
+      ],
+      "found_by": null,
+      "deleted": null,
+      "references": "- https://github.com/vitejs/vite/security/advisories/GHSA-4w7w-66w2-5vf9\n- https://github.com/vitejs/vite/pull/22161\n- https://github.com/vitejs/vite/commit/79f002f2286c03c88c7b74c511c7f9fc6dc46694\n- https://github.com/vitejs/vite/releases/tag/v6.4.2\n- https://github.com/vitejs/vite/releases/tag/v7.3.2\n- https://github.com/vitejs/vite/releases/tag/v8.0.5\n- https://nvd.nist.gov/vuln/detail/CVE-2026-39365\n- https://github.com/advisories/GHSA-4w7w-66w2-5vf9",
+      "created": "2026-04-06T18:03:46.000Z",
+      "id": 1116229,
+      "npm_advisory_id": null,
+      "overview": "### Summary\n\nAny files ending with `.map` even out side the project can be returned to the browser.\n\n### Impact\n\nOnly apps that match the following conditions are affected:\n\n- explicitly exposes the Vite dev server to the network (using `--host` or [`server.host` config option](https://vitejs.dev/config/server-options.html#server-host))\n- have a sensitive content in files ending with `.map` and the path is predictable\n\n### Details\n\nIn Vite v7.3.1, the dev server’s handling of `.map` requests for optimized dependencies resolves file paths and calls `readFile` without restricting `../` segments in the URL. As a result, it is possible to bypass the [`server.fs.strict`](https://vite.dev/config/server-options#server-fs-strict) allow list and retrieve `.map` files located outside the project root, provided they can be parsed as valid source map JSON.\n\n### PoC\n1. Create a minimal PoC sourcemap outside the project root\n    ```bash\n    cat > /tmp/poc.map <<'EOF'\n    {\"version\":3,\"file\":\"x.js\",\"sources\":[],\"names\":[],\"mappings\":\"\"}\n    EOF\n    ```\n2. Start the Vite dev server (example)\n    ```bash\n    pnpm -C playground/fs-serve dev --host 127.0.0.1 --port 18080\n    ```\n3. Confirm that direct `/@fs` access is blocked by `strict` (returns 403)\n    <img width=\"4004\" height=\"1038\" alt=\"image\" src=\"https://github.com/user-attachments/assets/15a859a8-1dc6-4105-8d58-80527c0dd9ab\" />\n4. Inject `../` segments under the optimized deps `.map` URL prefix to reach `/tmp/poc.map`\n    <img width=\"2790\" height=\"846\" alt=\"image\" src=\"https://github.com/user-attachments/assets/5d02957d-2e6a-4c45-9819-3f024e0e81f2\" />",
+      "reported_by": null,
+      "title": "Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling",
+      "metadata": null,
+      "cves": [
+        "CVE-2026-39365"
+      ],
+      "access": "public",
+      "severity": "moderate",
+      "module_name": "vite",
+      "vulnerable_versions": "<=6.4.1",
+      "github_advisory_id": "GHSA-4w7w-66w2-5vf9",
+      "recommendation": "Upgrade to version 6.4.2 or later",
+      "patched_versions": ">=6.4.2",
+      "updated": "2026-04-07T22:16:29.000Z",
+      "cvss": {
+        "score": 0,
+        "vectorString": null
+      },
+      "cwe": [
+        "CWE-22",
+        "CWE-200"
+      ],
+      "url": "https://github.com/advisories/GHSA-4w7w-66w2-5vf9"
     }
   },
   "muted": [],
@@ -106,13 +548,13 @@
     "vulnerabilities": {
       "info": 0,
       "low": 0,
-      "moderate": 0,
-      "high": 2,
+      "moderate": 10,
+      "high": 1,
       "critical": 0
     },
-    "dependencies": 639,
+    "dependencies": 997,
     "devDependencies": 0,
     "optionalDependencies": 0,
-    "totalDependencies": 639
+    "totalDependencies": 997
   }
 }
