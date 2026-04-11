@@ -29,11 +29,21 @@ type CredentialEncryptor struct {
 }
 
 // NewCredentialEncryptor creates a CredentialEncryptor from the config.
-// If the credential encryption key is not configured, returns (nil, nil)
-// to signal that encryption is disabled (plaintext fallback).
+// If the credential encryption key is not configured and the server is running
+// in release mode, an error is returned — plaintext credential storage is not
+// permitted in production.  In non-release modes a warning is logged and
+// (nil, nil) is returned to enable the plaintext fallback path.
 func NewCredentialEncryptor(cfg *config.Config) (*CredentialEncryptor, error) {
 	key := cfg.Security.CredentialEncryptionKey
 	if key == "" {
+		if cfg.Server.Mode == "release" {
+			return nil, fmt.Errorf(
+				"security.credential_encryption_key is required in release mode but is not set — " +
+					"provider credentials cannot be stored in PLAINTEXT in production. " +
+					"Generate a key with: openssl rand -hex 32 " +
+					"and set it via the SECURITY_CREDENTIAL_ENCRYPTION_KEY environment variable",
+			)
+		}
 		slog.Warn("security.credential_encryption_key is not set — provider credentials will be stored in PLAINTEXT. " +
 			"Generate a key with 'openssl rand -hex 32' and set SECURITY_CREDENTIAL_ENCRYPTION_KEY.")
 		return nil, nil
