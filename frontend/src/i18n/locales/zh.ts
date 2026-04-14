@@ -5425,6 +5425,7 @@ export default {
     paymentMethod: '支付方式',
     fee: '手续费',
     actualPay: '实付金额',
+    paidWith: '使用 {provider} 支付',
     createOrder: '确认支付',
     methods: {
       easypay: '易支付',

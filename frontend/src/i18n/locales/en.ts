@@ -5224,6 +5224,7 @@ export default {
     paymentMethod: 'Payment Method',
     fee: 'Fee',
     actualPay: 'Actual Payment',
+    paidWith: 'Paying with {provider}',
     createOrder: 'Confirm Payment',
     methods: {
       easypay: 'EasyPay',
