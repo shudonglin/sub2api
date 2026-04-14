@@ -53,3 +53,10 @@ updates:
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
+    ignore:
+      # pnpm/action-setup@v6 ships a regression that fails CI with
+      # ERR_PNPM_BROKEN_LOCKFILE against valid lockfileVersion 9.0
+      # lockfiles even with an explicit version pin. Re-evaluate when
+      # v7 ships or when upstream fixes the v6 regression.
+      - dependency-name: "pnpm/action-setup"
+        update-types: ["version-update:semver-major"]
