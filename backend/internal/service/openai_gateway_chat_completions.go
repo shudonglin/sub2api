@@ -14,6 +14,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -132,9 +133,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	logFields := []zap.Field{
 		zap.Int64("account_id", account.ID),
-		zap.String("original_model", originalModel),
-		zap.String("billing_model", billingModel),
-		zap.String("upstream_model", upstreamModel),
+		zap.String("original_model", logredact.SafeLogValue(originalModel)),
+		zap.String("billing_model", logredact.SafeLogValue(billingModel)),
+		zap.String("upstream_model", logredact.SafeLogValue(upstreamModel)),
 		zap.Bool("stream", clientStream),
 		zap.Bool("responses_shape", isResponsesShape),
 	}

@@ -47,6 +47,22 @@ var (
 	extraTextPatternCache     sync.Map // map[string]*textRedactPatterns
 )
 
+// SafeLogValue strips CR/LF (and other control chars) from a user-controlled
+// string so it cannot forge log entries when written into a structured logger.
+// Callers should use this on any raw string that originated in a client-supplied
+// request field before logging it, even when using a structured encoder.
+func SafeLogValue(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return ' '
+		}
+		return r
+	}, s)
+}
+
 func RedactMap(input map[string]any, extraKeys ...string) map[string]any {
 	if input == nil {
 		return map[string]any{}
