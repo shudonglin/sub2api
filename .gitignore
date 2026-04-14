@@ -132,6 +132,8 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
+!docs/PAYMENT.md
+!docs/PAYMENT_CN.md
 .serena/
 .codex/
 frontend/coverage/
@@ -143,3 +145,4 @@ deploy/data/
 .gstack/
 
 .worktrees/
+.superpowers/
