@@ -126,6 +126,9 @@ type SystemSettings struct {
 	EnablePrivacyMode                 bool `json:"enable_privacy_mode"`
 	EnableCCHSigning                  bool `json:"enable_cch_signing"`
 
+	// Web Search Emulation
+	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
+
 	// Payment configuration
 	PaymentEnabled           bool     `json:"payment_enabled"`
 	PaymentMinAmount         float64  `json:"payment_min_amount"`
@@ -147,6 +150,13 @@ type SystemSettings struct {
 	PaymentCancelRateLimitWindow  int    `json:"payment_cancel_rate_limit_window"`
 	PaymentCancelRateLimitUnit    string `json:"payment_cancel_rate_limit_unit"`
 	PaymentCancelRateLimitMode    string `json:"payment_cancel_rate_limit_window_mode"`
+
+	// Balance low notification
+	BalanceLowNotifyEnabled     bool               `json:"balance_low_notify_enabled"`
+	BalanceLowNotifyThreshold   float64            `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL string             `json:"balance_low_notify_recharge_url"`
+	AccountQuotaNotifyEnabled   bool               `json:"account_quota_notify_enabled"`
+	AccountQuotaNotifyEmails    []NotifyEmailEntry `json:"account_quota_notify_emails"`
 }
 
 type DefaultSubscriptionSetting struct {
@@ -185,6 +195,10 @@ type PublicSettings struct {
 	BackendModeEnabled               bool             `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool             `json:"payment_enabled"`
 	Version                          string           `json:"version"`
+	BalanceLowNotifyEnabled          bool             `json:"balance_low_notify_enabled"`
+	AccountQuotaNotifyEnabled        bool             `json:"account_quota_notify_enabled"`
+	BalanceLowNotifyThreshold        float64          `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL      string           `json:"balance_low_notify_recharge_url"`
 }
 
 // OverloadCooldownSettings 529过载冷却配置 DTO
