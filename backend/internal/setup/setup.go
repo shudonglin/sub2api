@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -17,10 +18,36 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/repository"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/redis/go-redis/v9"
 	"gopkg.in/yaml.v3"
 )
+
+// safeDBIdentifier validates that a PostgreSQL identifier (such as a
+// database name) contains only characters allowed by our setup flow
+// ([a-zA-Z][a-zA-Z0-9_]*, <=63 chars). PostgreSQL does not let us bind
+// identifiers as parameters, so we whitelist here and then pass through
+// pq.QuoteIdentifier for defense in depth before interpolating.
+func safeDBIdentifier(name string) (string, error) {
+	if len(name) == 0 || len(name) > 63 {
+		return "", fmt.Errorf("invalid identifier length: %d", len(name))
+	}
+	first := name[0]
+	firstIsLetter := (first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z')
+	if !firstIsLetter {
+		return "", fmt.Errorf("invalid identifier: %q", name)
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		isLetter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		isDigit := c >= '0' && c <= '9'
+		isAllowed := isLetter || isDigit || c == '_'
+		if !isAllowed {
+			return "", fmt.Errorf("invalid identifier: %q", name)
+		}
+	}
+	return pq.QuoteIdentifier(name), nil
+}
 
 // Config paths
 const (
@@ -198,11 +225,13 @@ func TestDatabaseConnection(cfg *DatabaseConfig) error {
 
 	// Create database if not exists
 	if !exists {
-		// 注意：数据库名不能参数化，依赖前置输入校验保障安全。
-		// Note: Database names cannot be parameterized, but we've already validated cfg.DBName
-		// in the handler using validateDBName() which only allows [a-zA-Z][a-zA-Z0-9_]*
-		_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE %s", cfg.DBName))
+		// 数据库名不能作为参数绑定；这里既做正则白名单校验，也用
+		// pq.QuoteIdentifier 包装，防止任何意外字符导致 SQL 注入。
+		quotedName, err := safeDBIdentifier(cfg.DBName)
 		if err != nil {
+			return fmt.Errorf("invalid database name: %w", err)
+		}
+		if _, err := db.ExecContext(ctx, "CREATE DATABASE "+quotedName); err != nil {
 			return fmt.Errorf("failed to create database '%s': %w", cfg.DBName, err)
 		}
 		logger.LegacyPrintf("setup", "Database '%s' created successfully", cfg.DBName)
@@ -391,8 +420,13 @@ func createAdminUser(cfg *SetupConfig) (bool, string, error) {
 			return false, "", fmt.Errorf("failed to generate admin password: %w", genErr)
 		}
 		cfg.Admin.Password = password
-		fmt.Printf("Generated admin password (one-time): %s\n", cfg.Admin.Password)
-		fmt.Println("IMPORTANT: Save this password! It will not be shown again.")
+		// The generated password must reach the operator exactly once.
+		// Persist it to a 0600 file in the data dir rather than logging it —
+		// this removes the clear-text-log (CWE-312) and log-injection
+		// (CWE-117) sinks that CodeQL flagged on the previous fmt.Printf.
+		if err := persistGeneratedAdminPassword(password); err != nil {
+			return false, "", fmt.Errorf("failed to persist generated admin password: %w", err)
+		}
 	}
 
 	admin := &service.User{
@@ -501,6 +535,26 @@ func generateSecret(length int) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(bytes), nil
+}
+
+// persistGeneratedAdminPassword writes the one-time generated admin
+// password to a restricted file inside the data dir. The operator reads
+// it (and should delete it) manually; it is NOT logged because writing a
+// credential to a log stream triggers go/clear-text-logging and its
+// content is also user-controlled (CWE-117 log-injection).
+func persistGeneratedAdminPassword(password string) error {
+	dir := GetDataDir()
+	if dir == "" {
+		dir = "."
+	}
+	path := filepath.Join(dir, ".admin-bootstrap-password")
+	contents := []byte(password + "\n")
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
+		return err
+	}
+	// Only announce the location, never the value.
+	fmt.Printf("Generated admin password written to %s (mode 0600). Read it once and delete the file.\n", path)
+	return nil
 }
 
 // =============================================================================

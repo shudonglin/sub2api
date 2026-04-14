@@ -25,6 +25,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -767,16 +768,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
-					zap.String("account_name", account.Name),
-					zap.String("account_platform", account.Platform),
+					zap.String("account_name", logredact.SafeLogValue(account.Name)),
+					zap.String("account_platform", logredact.SafeLogValue(account.Platform)),
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				}
 				if account.Proxy != nil {
 					forwardFailedFields = append(forwardFailedFields,
 						zap.Int64("proxy_id", account.Proxy.ID),
-						zap.String("proxy_name", account.Proxy.Name),
-						zap.String("proxy_host", account.Proxy.Host),
+						zap.String("proxy_name", logredact.SafeLogValue(account.Proxy.Name)),
+						zap.String("proxy_host", logredact.SafeLogValue(account.Proxy.Host)),
 						zap.Int("proxy_port", account.Proxy.Port),
 					)
 				} else if account.ProxyID != nil {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 // APIKeyRateLimitCacheData holds rate limit usage data cached in Redis.
@@ -369,7 +370,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 	// 2. 使用硬编码回退价格
 	fallback := s.getFallbackPricing(model)
 	if fallback != nil {
-		log.Printf("[Billing] Using fallback pricing for model: %s", model)
+		log.Printf("[Billing] Using fallback pricing for model: %s", logredact.SafeLogValue(model))
 		return s.applyModelSpecificPricingPolicy(model, fallback), nil
 	}
 

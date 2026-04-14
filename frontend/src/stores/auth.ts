@@ -277,12 +277,19 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 直接设置 token（用于 OAuth/SSO 回调），并加载当前用户信息。
-   * 会自动读取 localStorage 中已设置的 refresh_token 和 token_expires_in
+   * 调用方可直接传入 refresh token / expires_in，避免在 localStorage 中中转明文敏感数据。
+   * 若未传入，会回退读取 localStorage 中可能已存在的 refresh_token / token_expires_at
+   * 以保持向后兼容（并在读取后立即清除，防止泄露）。
    * @param newToken - 后端签发的 JWT access token
+   * @param refreshTokenParam - 可选的 refresh token（优先于 localStorage）
+   * @param expiresInSeconds - 可选的 access token 剩余秒数（优先于 localStorage）
    */
-  async function setToken(newToken: string): Promise<User> {
+  async function setToken(
+    newToken: string,
+    refreshTokenParam?: string,
+    expiresInSeconds?: number
+  ): Promise<User> {
     // Clear any previous state first (avoid mixing sessions)
-    // Note: Don't clear localStorage here as OAuth callback may have set refresh_token
     stopAutoRefresh()
     stopTokenRefresh()
     token.value = null
@@ -291,15 +298,35 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = newToken
     localStorage.setItem(AUTH_TOKEN_KEY, newToken)
 
-    // Read refresh token and expires_at from localStorage if set by OAuth callback
-    const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
-    const savedExpiresAt = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
+    // Prefer parameters (kept in memory); fall back to localStorage for backward
+    // compatibility with legacy callers. Any legacy localStorage values are cleared
+    // immediately after being consumed so sensitive tokens don't linger on disk.
+    let effectiveRefreshToken: string | null = refreshTokenParam ?? null
+    let effectiveExpiresAt: number | null =
+      typeof expiresInSeconds === 'number'
+        ? Date.now() + expiresInSeconds * 1000
+        : null
 
-    if (savedRefreshToken) {
-      refreshTokenValue.value = savedRefreshToken
+    if (!effectiveRefreshToken) {
+      const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+      if (savedRefreshToken) {
+        effectiveRefreshToken = savedRefreshToken
+        localStorage.removeItem(REFRESH_TOKEN_KEY)
+      }
     }
-    if (savedExpiresAt) {
-      tokenExpiresAt.value = parseInt(savedExpiresAt, 10)
+    if (effectiveExpiresAt === null) {
+      const savedExpiresAt = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
+      if (savedExpiresAt) {
+        effectiveExpiresAt = parseInt(savedExpiresAt, 10)
+        localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
+      }
+    }
+
+    if (effectiveRefreshToken) {
+      refreshTokenValue.value = effectiveRefreshToken
+    }
+    if (effectiveExpiresAt !== null && !Number.isNaN(effectiveExpiresAt)) {
+      tokenExpiresAt.value = effectiveExpiresAt
     }
 
     try {
@@ -308,7 +335,7 @@ export const useAuthStore = defineStore('auth', () => {
 
       // Start proactive token refresh if we have refresh token and expiry info
       // Note: use !== null to handle case when tokenExpiresAt.value is 0 (expired)
-      if (savedRefreshToken && tokenExpiresAt.value !== null) {
+      if (effectiveRefreshToken && tokenExpiresAt.value !== null) {
         scheduleTokenRefreshAt(tokenExpiresAt.value)
       }
 

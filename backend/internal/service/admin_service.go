@@ -2054,6 +2054,15 @@ func (s *adminServiceImpl) GetRedeemCode(ctx context.Context, id int64) (*Redeem
 }
 
 func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *GenerateRedeemCodesInput) ([]RedeemCode, error) {
+	// 限制一次批量生成的兑换码数量，避免分配过大切片。
+	const maxRedeemCodeBatch = 10_000
+	if input.Count <= 0 {
+		return nil, errors.New("count must be greater than 0")
+	}
+	if input.Count > maxRedeemCodeBatch {
+		return nil, fmt.Errorf("count %d exceeds max batch size %d", input.Count, maxRedeemCodeBatch)
+	}
+
 	// 如果是订阅类型，验证必须有 GroupID
 	if input.Type == RedeemTypeSubscription {
 		if input.GroupID == nil {

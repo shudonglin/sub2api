@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/google/uuid"
 )
 
@@ -623,8 +624,10 @@ func buildGenerationConfig(req *ClaudeRequest) *GeminiGenerationConfig {
 
 			// 自动修正：max_tokens 必须大于 budget_tokens（Claude 上游要求）
 			if adjusted, ok := ensureMaxTokensGreaterThanBudget(config.MaxOutputTokens, budget); ok {
-				log.Printf("[Antigravity] Auto-adjusted max_tokens from %d to %d (must be > budget_tokens=%d)",
-					config.MaxOutputTokens, adjusted, budget)
+				log.Printf("[Antigravity] Auto-adjusted max_tokens from %s to %s (must be > budget_tokens=%s)",
+					logredact.SafeLogValue(strconv.Itoa(config.MaxOutputTokens)),
+					logredact.SafeLogValue(strconv.Itoa(adjusted)),
+					logredact.SafeLogValue(strconv.Itoa(budget)))
 				config.MaxOutputTokens = adjusted
 			}
 		}
@@ -698,7 +701,7 @@ func buildTools(tools []ClaudeTool) []GeminiToolDeclaration {
 		// 检查是否为 custom 类型工具 (MCP)
 		if tool.Type == "custom" {
 			if tool.Custom == nil || tool.Custom.InputSchema == nil {
-				log.Printf("[Warning] Skipping invalid custom tool '%s': missing custom spec or input_schema", tool.Name)
+				log.Printf("[Warning] Skipping invalid custom tool '%s': missing custom spec or input_schema", logredact.SafeLogValue(tool.Name))
 				continue
 			}
 			description = tool.Custom.Description

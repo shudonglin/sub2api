@@ -57,7 +57,25 @@ const (
 
 	openAIWSIngressStagePreviousResponseNotFound = "previous_response_not_found"
 	openAIWSMaxPrevResponseIDDeletePasses        = 8
+
+	// openAIWSMaxMakeCapHint caps make() capacity hints derived from parsed
+	// JSON sizes. JSON parsing already enforces its own limits, but an explicit
+	// upstream bound prevents pathological allocation sizes from propagating into
+	// make() and satisfies go/allocation-size-overflow.
+	openAIWSMaxMakeCapHint = 1 << 16 // 65536 entries
 )
+
+// boundedMakeHint clamps a capacity hint into [0, openAIWSMaxMakeCapHint].
+// Used for make(map, n) / make([]T, 0, n) where n is derived from parsed data.
+func boundedMakeHint(n int) int {
+	if n < 0 {
+		return 0
+	}
+	if n > openAIWSMaxMakeCapHint {
+		return openAIWSMaxMakeCapHint
+	}
+	return n
+}
 
 var openAIWSLogValueReplacer = strings.NewReplacer(
 	"error", "err",
@@ -1185,7 +1203,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any, account *Account) map[string]any {
 	// OpenAI WS Mode 协议：response.create 字段与 HTTP /responses 基本一致。
 	// 保留 stream 字段（与 Codex CLI 一致），仅移除 background。
-	payload := make(map[string]any, len(reqBody)+1)
+	payload := make(map[string]any, boundedMakeHint(len(reqBody)+1))
 	for k, v := range reqBody {
 		payload[k] = v
 	}
@@ -1217,7 +1235,7 @@ func setOpenAIWSTurnMetadata(payload map[string]any, turnMetadata string) {
 		existing[openAIWSTurnMetadataHeader] = metadata
 		payload["client_metadata"] = existing
 	case map[string]string:
-		next := make(map[string]any, len(existing)+1)
+		next := make(map[string]any, boundedMakeHint(len(existing)+1))
 		for k, v := range existing {
 			next[k] = v
 		}
@@ -1559,7 +1577,7 @@ func buildOpenAIWSReplayInputSequence(
 	if openAIWSRawItemsHasPrefix(currentItems, previousFullInput) {
 		return cloneOpenAIWSRawMessages(currentItems), true, nil
 	}
-	merged := make([]json.RawMessage, 0, len(previousFullInput)+len(currentItems))
+	merged := make([]json.RawMessage, 0, boundedMakeHint(len(previousFullInput)+len(currentItems)))
 	merged = append(merged, cloneOpenAIWSRawMessages(previousFullInput)...)
 	merged = append(merged, cloneOpenAIWSRawMessages(currentItems)...)
 	return merged, true, nil
@@ -3578,7 +3596,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	prewarmStart := time.Now()
 	logOpenAIWSModeInfo("prewarm_start account_id=%d conn_id=%s", account.ID, connID)
 
-	prewarmPayload := make(map[string]any, len(payload)+1)
+	prewarmPayload := make(map[string]any, boundedMakeHint(len(payload)+1))
 	for k, v := range payload {
 		prewarmPayload[k] = v
 	}

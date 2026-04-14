@@ -72,7 +72,18 @@ func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todaySt
 	}
 }
 
+// paymentStatsMaxDays bounds the `days` parameter for dashboard aggregation
+// (roughly 10 years). Callers should clamp before reaching this layer; the
+// explicit guard prevents allocation-size overflow from pathological inputs.
+const paymentStatsMaxDays = 3660
+
 func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) []DailyStats {
+	if days < 0 {
+		days = 0
+	}
+	if days > paymentStatsMaxDays {
+		days = paymentStatsMaxDays
+	}
 	dailyMap := make(map[string]*DailyStats)
 	for _, o := range orders {
 		if o.PaidAt == nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
@@ -71,8 +72,8 @@ func (s *GatewayService) ForwardAsResponses(
 
 	logger.L().Debug("gateway forward_as_responses: model mapping applied",
 		zap.Int64("account_id", account.ID),
-		zap.String("original_model", originalModel),
-		zap.String("mapped_model", mappedModel),
+		zap.String("original_model", logredact.SafeLogValue(originalModel)),
+		zap.String("mapped_model", logredact.SafeLogValue(mappedModel)),
 		zap.Bool("client_stream", clientStream),
 	)
 

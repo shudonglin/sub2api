@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -67,10 +68,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 
 	logger.L().Debug("openai messages: model mapping applied",
 		zap.Int64("account_id", account.ID),
-		zap.String("original_model", originalModel),
-		zap.String("normalized_model", normalizedModel),
-		zap.String("billing_model", billingModel),
-		zap.String("upstream_model", upstreamModel),
+		zap.String("original_model", logredact.SafeLogValue(originalModel)),
+		zap.String("normalized_model", logredact.SafeLogValue(normalizedModel)),
+		zap.String("billing_model", logredact.SafeLogValue(billingModel)),
+		zap.String("upstream_model", logredact.SafeLogValue(upstreamModel)),
 		zap.Bool("stream", isStream),
 	)
 

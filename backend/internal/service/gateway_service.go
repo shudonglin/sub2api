@@ -3656,7 +3656,17 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 			items = [][]byte{claudeCodeBlock, nextBlock}
 		}
 	case []any:
-		items = make([][]byte, 0, len(v)+1)
+		// Guard allocation hint against pathological upstream payloads.
+		// Cap len(v) first and drop the trailing +1 so no arithmetic
+		// on a user-derived length can overflow. One extra element
+		// for claudeCodeBlock is a cosmetic hint; append will grow
+		// the slice if we underestimate by one.
+		const maxSystemBlocks = 1 << 14 // 16384
+		capHint := len(v)
+		if capHint < 0 || capHint > maxSystemBlocks {
+			capHint = maxSystemBlocks
+		}
+		items = make([][]byte, 0, capHint)
 		items = append(items, claudeCodeBlock)
 		prefixedNext := false
 		systemResult := gjson.GetBytes(body, "system")

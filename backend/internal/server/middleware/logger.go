@@ -5,6 +5,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -41,26 +42,26 @@ func Logger() gin.HandlerFunc {
 			zap.String("component", "http.access"),
 			zap.Int("status_code", statusCode),
 			zap.Int64("latency_ms", latency.Milliseconds()),
-			zap.String("client_ip", clientIP),
-			zap.String("protocol", protocol),
-			zap.String("method", method),
-			zap.String("path", path),
+			zap.String("client_ip", logredact.SafeLogValue(clientIP)),
+			zap.String("protocol", logredact.SafeLogValue(protocol)),
+			zap.String("method", logredact.SafeLogValue(method)),
+			zap.String("path", logredact.SafeLogValue(path)),
 		}
 		if hasAccountID && accountID > 0 {
 			fields = append(fields, zap.Int64("account_id", accountID))
 		}
 		if platform != "" {
-			fields = append(fields, zap.String("platform", platform))
+			fields = append(fields, zap.String("platform", logredact.SafeLogValue(platform)))
 		}
 		if model != "" {
-			fields = append(fields, zap.String("model", model))
+			fields = append(fields, zap.String("model", logredact.SafeLogValue(model)))
 		}
 
 		l := logger.FromContext(c.Request.Context()).With(fields...)
 		l.Info("http request completed", zap.Time("completed_at", endTime))
 
 		if len(c.Errors) > 0 {
-			l.Warn("http request contains gin errors", zap.String("errors", c.Errors.String()))
+			l.Warn("http request contains gin errors", zap.String("errors", logredact.SafeLogValue(c.Errors.String())))
 		}
 	}
 }

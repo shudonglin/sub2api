@@ -219,7 +219,7 @@ func Relay(
 		Error:           relayErrorString(firstExit.err),
 	})
 	combinedWroteDownstream := firstExit.wroteDownstream
-	secondExit := relayExitSignal{graceful: true}
+	var secondExit relayExitSignal
 	hasSecondExit := false
 
 	// 客户端断开后尽力继续读取上游短窗口，捕获延迟 usage/terminal 事件用于计费。

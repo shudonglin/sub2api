@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,6 +13,12 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/dgraph-io/ristretto"
 )
+
+// apiKeyAuthCacheSalt is a fixed keyed-hash salt used to derive auth cache keys
+// from raw API keys. Using HMAC-SHA256 (rather than bare SHA256) prevents an
+// attacker with a cache dump from running pre-computed dictionary attacks to
+// recover raw API keys, and closes CodeQL go/weak-sensitive-data-hashing.
+var apiKeyAuthCacheSalt = []byte("sub2api/apikey-auth-cache/v1")
 
 const apiKeyAuthSnapshotVersion = 3
 
@@ -104,8 +111,12 @@ func (s *APIKeyService) StartAuthCacheInvalidationSubscriber(ctx context.Context
 }
 
 func (s *APIKeyService) authCacheKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	mac := hmac.New(sha256.New, apiKeyAuthCacheSalt)
+	_, _ = mac.Write([]byte(key))
+	// "h1:" algorithm marker forces clean invalidation of any SHA256-format
+	// entries left in Redis by earlier deployments — they simply miss and
+	// get repopulated under the new key space.
+	return "h1:" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *APIKeyService) getAuthCacheEntry(ctx context.Context, cacheKey string) (*APIKeyAuthCacheEntry, bool) {

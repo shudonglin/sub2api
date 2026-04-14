@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 
@@ -469,7 +470,7 @@ func (h *DataManagementHandler) ListBackupJobs(c *gin.Context) {
 	pageSize := int32(20)
 	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
 		v, err := strconv.Atoi(raw)
-		if err != nil || v <= 0 {
+		if err != nil || v <= 0 || v > math.MaxInt32 {
 			response.BadRequest(c, "Invalid page_size")
 			return
 		}

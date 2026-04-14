@@ -22,12 +22,15 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -1033,7 +1036,12 @@ func (h *AccountHandler) BatchClearError(c *gin.Context) {
 			// 清除错误后，同时清除 token 缓存
 			if h.tokenCacheInvalidator != nil && account.IsOAuth() {
 				if invalidateErr := h.tokenCacheInvalidator.InvalidateToken(gctx, account); invalidateErr != nil {
-					log.Printf("[WARN] Failed to invalidate token cache for account %d: %v", accountID, invalidateErr)
+					// Structured fields + SafeLogValue defuse CodeQL's go/log-injection
+					// flow tracking on the ParseInt-sourced accountID and error message.
+					logger.L().Warn("token cache invalidate failed",
+						zap.Int64("account_id", accountID),
+						zap.String("error", logredact.SafeLogValue(invalidateErr.Error())),
+					)
 				}
 			}
 

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 // BlockType 内容块类型
@@ -106,10 +108,10 @@ func (p *StreamingProcessor) ProcessLine(line string) []byte {
 	if len(geminiResp.Candidates) > 0 {
 		finishReason := geminiResp.Candidates[0].FinishReason
 		if finishReason == "MALFORMED_FUNCTION_CALL" {
-			log.Printf("[Antigravity] MALFORMED_FUNCTION_CALL detected in stream for model %s", p.originalModel)
+			log.Printf("[Antigravity] MALFORMED_FUNCTION_CALL detected in stream for model %s", logredact.SafeLogValue(p.originalModel))
 			if geminiResp.Candidates[0].Content != nil {
 				if b, err := json.Marshal(geminiResp.Candidates[0].Content); err == nil {
-					log.Printf("[Antigravity] Malformed content: %s", string(b))
+					log.Printf("[Antigravity] Malformed content: %s", logredact.SafeLogValue(string(b)))
 				}
 			}
 		}

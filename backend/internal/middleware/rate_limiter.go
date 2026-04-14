@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -98,7 +99,7 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 		// 使用 Lua 脚本原子操作增加计数并设置过期
 		count, repaired, err := rateLimitRun(ctx, r.redis, redisKey, windowMillis)
 		if err != nil {
-			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", redisKey, failureModeLabel(failureMode), err)
+			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", logredact.SafeLogValue(redisKey), failureModeLabel(failureMode), err)
 			if failureMode == RateLimitFailClose {
 				abortRateLimit(c)
 				return
@@ -108,7 +109,7 @@ func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Durati
 			return
 		}
 		if repaired {
-			log.Printf("[RateLimit] ttl repaired: key=%s window_ms=%d", redisKey, windowMillis)
+			log.Printf("[RateLimit] ttl repaired: key=%s window_ms=%d", logredact.SafeLogValue(redisKey), windowMillis)
 		}
 
 		// 超过限制

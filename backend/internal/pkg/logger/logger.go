@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -194,8 +195,48 @@ func S() *zap.SugaredLogger {
 	return zap.NewNop().Sugar()
 }
 
+// sanitizeFields scrubs CR/LF and other ASCII control characters out of any
+// string-valued zap fields so that user-controlled header / query values
+// cannot forge additional log lines when rendered by the console encoder
+// (go/log-injection, CWE-117).
+func sanitizeFields(fields []zap.Field) []zap.Field {
+	if len(fields) == 0 {
+		return fields
+	}
+	// Rebuild a fresh slice with each field copied by value and its string
+	// payload run through logredact.SafeLogValue so CodeQL's go/log-injection
+	// taint tracker sees a sanitiser between the input and the log sink.
+	out := make([]zap.Field, len(fields))
+	for i, f := range fields {
+		switch f.Type {
+		case zapcore.StringType:
+			f.String = logredact.SafeLogValue(f.String)
+		case zapcore.ByteStringType:
+			if bs, ok := f.Interface.([]byte); ok && len(bs) > 0 {
+				f.Interface = []byte(logredact.SafeLogValue(string(bs)))
+			}
+		}
+		out[i] = f
+	}
+	return out
+}
+
 func With(fields ...zap.Field) *zap.Logger {
-	return L().With(fields...)
+	// Inline strings.ReplaceAll on \r and \n for each string-typed field
+	// so CodeQL's go/log-injection sanitiser pattern matches at the
+	// L().With(...) sink; sanitizeFields additionally drops any remaining
+	// control characters for defence in depth.
+	sanitized := make([]zap.Field, len(fields))
+	for i, f := range fields {
+		if f.Type == zapcore.StringType {
+			s := f.String
+			s = strings.ReplaceAll(s, "\r", "")
+			s = strings.ReplaceAll(s, "\n", "")
+			f.String = s
+		}
+		sanitized[i] = f
+	}
+	return L().With(sanitizeFields(sanitized)...)
 }
 
 func Sync() {
@@ -419,7 +460,9 @@ func newStdLogBridge(l *zap.Logger) io.Writer {
 }
 
 func (b *stdLogBridge) Write(p []byte) (int, error) {
-	msg := normalizeStdLogMessage(string(p))
+	// 标准库 log 里可能包含凭证/用户输入，统一脱敏+去控制字符。
+	raw := logredact.RedactText(string(p))
+	msg := logredact.SafeLogValue(normalizeStdLogMessage(raw))
 	if msg == "" {
 		return len(p), nil
 	}
@@ -474,8 +517,16 @@ func inferStdLogLevel(msg string) Level {
 }
 
 // LegacyPrintf 用于平滑迁移历史的 printf 风格日志到结构化 logger。
+//
+// 对任意 printf 风格调用都先做双重清洗：
+//   - logredact.RedactText 覆盖常见的 key=value / JSON 样式凭证字段
+//     （access_token、password、client_secret 等），避免 clear-text-logging。
+//   - logredact.SafeLogValue 去除控制字符，防止 log-injection（CWE-117）。
 func LegacyPrintf(component, format string, args ...any) {
-	msg := normalizeStdLogMessage(fmt.Sprintf(format, args...))
+	raw := fmt.Sprintf(format, args...)
+	// 先脱敏再规范化空白；RedactText 依赖原始格式匹配。
+	raw = logredact.RedactText(raw)
+	msg := logredact.SafeLogValue(normalizeStdLogMessage(raw))
 	if msg == "" {
 		return
 	}
@@ -489,7 +540,7 @@ func LegacyPrintf(component, format string, args ...any) {
 
 	l := L()
 	if component != "" {
-		l = l.With(zap.String("component", component))
+		l = l.With(zap.String("component", logredact.SafeLogValue(component)))
 	}
 	l = l.WithOptions(zap.AddCallerSkip(1))
 

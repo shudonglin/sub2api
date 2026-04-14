@@ -116,13 +116,13 @@ async function handleSubmitInvitation() {
       pendingOAuthToken.value,
       invitationCode.value.trim()
     )
-    if (tokenData.refresh_token) {
-      localStorage.setItem('refresh_token', tokenData.refresh_token)
-    }
-    if (tokenData.expires_in) {
-      localStorage.setItem('token_expires_at', String(Date.now() + tokenData.expires_in * 1000))
-    }
-    await authStore.setToken(tokenData.access_token)
+    // Pass refresh token / expiry directly to the store so they are held in
+    // memory only (not written to localStorage from here).
+    await authStore.setToken(
+      tokenData.access_token,
+      tokenData.refresh_token || undefined,
+      tokenData.expires_in || undefined
+    )
     appStore.showSuccess(t('auth.loginSuccess'))
     await router.replace(redirectTo.value)
   } catch (e: unknown) {
@@ -174,18 +174,14 @@ onMounted(async () => {
   }
 
   try {
-    // Store refresh token and expires_at (convert to timestamp) if provided
-    if (refreshToken) {
-      localStorage.setItem('refresh_token', refreshToken)
-    }
-    if (expiresInStr) {
-      const expiresIn = parseInt(expiresInStr, 10)
-      if (!isNaN(expiresIn)) {
-        localStorage.setItem('token_expires_at', String(Date.now() + expiresIn * 1000))
-      }
-    }
-
-    await authStore.setToken(token)
+    // Pass refresh token / expiry directly to the store so they are held in
+    // memory only (not written to localStorage from here).
+    const parsedExpiresIn = expiresInStr ? parseInt(expiresInStr, 10) : NaN
+    await authStore.setToken(
+      token,
+      refreshToken || undefined,
+      !isNaN(parsedExpiresIn) ? parsedExpiresIn : undefined
+    )
     appStore.showSuccess(t('auth.loginSuccess'))
     await router.replace(redirect)
   } catch (e: unknown) {

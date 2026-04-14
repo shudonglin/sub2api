@@ -146,24 +146,68 @@ func (s *EmailService) SendEmail(ctx context.Context, to, subject, body string) 
 	return s.SendEmailWithConfig(config, to, subject, body)
 }
 
+// sanitizeEmailHeader strips CR/LF (and other control characters) from a
+// user-controlled string that flows into an SMTP header. Without this, an
+// attacker could inject additional headers (e.g. Bcc:, Content-Type:) or
+// split the envelope from the DATA section via CRLF injection.
+//
+// It is intentionally strict: any byte below 0x20 (including tab) and the
+// DEL byte (0x7f) is dropped. The result is safe to interpolate into
+// header lines such as From:/To:/Subject:.
+func sanitizeEmailHeader(v string) string {
+	if v == "" {
+		return v
+	}
+	// Explicit CR/LF removal first — matches the sanitiser pattern that
+	// CodeQL's go/email-injection taint model recognises at header sinks.
+	v = strings.ReplaceAll(v, "\r", "")
+	v = strings.ReplaceAll(v, "\n", "")
+	b := make([]byte, 0, len(v))
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if c < 0x20 || c == 0x7f {
+			continue
+		}
+		b = append(b, c)
+	}
+	return string(b)
+}
+
 // SendEmailWithConfig 使用指定配置发送邮件
 func (s *EmailService) SendEmailWithConfig(config *SMTPConfig, to, subject, body string) error {
-	from := config.From
-	if config.FromName != "" {
-		from = fmt.Sprintf("%s <%s>", config.FromName, config.From)
+	// Strip CR/LF from every user-controlled header component to prevent
+	// SMTP header injection (CWE-93). Body is MIME content after the blank
+	// line separator and is not subject to the same parsing rules.
+	// Inline strings.ReplaceAll on \r and \n for every user-controlled
+	// component so CodeQL's go/email-injection sanitiser pattern recognises
+	// the flow at the SendMail sink. sanitizeEmailHeader then additionally
+	// drops any remaining <0x20 / 0x7f bytes for defence in depth.
+	safeFromAddr := sanitizeEmailHeader(strings.ReplaceAll(strings.ReplaceAll(config.From, "\r", ""), "\n", ""))
+	safeFromName := sanitizeEmailHeader(strings.ReplaceAll(strings.ReplaceAll(config.FromName, "\r", ""), "\n", ""))
+	safeTo := sanitizeEmailHeader(strings.ReplaceAll(strings.ReplaceAll(to, "\r", ""), "\n", ""))
+	safeSubject := sanitizeEmailHeader(strings.ReplaceAll(strings.ReplaceAll(subject, "\r", ""), "\n", ""))
+	// Body is MIME content after the CRLF-CRLF separator; strip bare CR
+	// and NUL so the body cannot shadow a header continuation and so the
+	// sanitiser pattern matches at the sink.
+	body = strings.ReplaceAll(body, "\r", "")
+	body = strings.ReplaceAll(body, "\x00", "")
+
+	from := safeFromAddr
+	if safeFromName != "" {
+		from = fmt.Sprintf("%s <%s>", safeFromName, safeFromAddr)
 	}
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		from, to, subject, body)
+		from, safeTo, safeSubject, body)
 
 	addr := fmt.Sprintf("%s:%d", config.Host, config.Port)
 	auth := smtp.PlainAuth("", config.Username, config.Password, config.Host)
 
 	if config.UseTLS {
-		return s.sendMailTLS(addr, auth, config.From, to, []byte(msg), config.Host)
+		return s.sendMailTLS(addr, auth, safeFromAddr, safeTo, []byte(msg), config.Host)
 	}
 
-	return smtp.SendMail(addr, auth, config.From, []string{to}, []byte(msg))
+	return smtp.SendMail(addr, auth, safeFromAddr, []string{safeTo}, []byte(msg))
 }
 
 // sendMailTLS 使用TLS发送邮件
