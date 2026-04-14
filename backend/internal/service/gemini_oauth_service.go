@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 const (
@@ -618,7 +619,7 @@ func (s *GeminiOAuthService) ExchangeCode(ctx context.Context, input *GeminiExch
 				logger.LegacyPrintf("service.gemini_oauth", "[GeminiOAuth] Using default tier_id: %s", tierID)
 			}
 		}
-		fmt.Printf("[GeminiOAuth] Google One tierID after normalization: %s\n", tierID)
+		fmt.Printf("[GeminiOAuth] Google One tierID after normalization: %s\n", logredact.SafeLogValue(tierID))
 
 		// Store Drive info in extra field for caching
 		if storageInfo != nil {

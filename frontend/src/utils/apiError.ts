@@ -51,8 +51,11 @@ export function extractApiErrorMessage(
     if (code && i18nMap[code]) return i18nMap[code]
   }
 
-  // Plain object from API client interceptor (most common case)
-  if (typeof err === 'object' && err !== null) {
+  // Plain object from API client interceptor (most common case). The early
+  // `if (!err) return` above already narrowed err to truthy, so the typeof
+  // object check alone is enough — adding `err !== null` trips CodeQL's
+  // js/comparison-between-incompatible-types heuristic.
+  if (typeof err === 'object') {
     const e = err as ApiErrorLike
     // Interceptor shape: { message, error }
     if (e.message) return e.message

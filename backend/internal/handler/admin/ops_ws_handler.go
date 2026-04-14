@@ -688,17 +688,17 @@ func loadOpsWSRuntimeLimitsFromEnv() opsWSRuntimeLimits {
 	}
 
 	if v := strings.TrimSpace(os.Getenv(envOpsWSMaxConns)); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 && parsed <= math.MaxInt32 {
 			cfg.MaxConns = int32(parsed)
 		} else {
-			logger.LegacyPrintf("handler.admin.ops_ws", "[OpsWS] invalid %s=%q (expected int>0); using default=%d", envOpsWSMaxConns, v, cfg.MaxConns)
+			logger.LegacyPrintf("handler.admin.ops_ws", "[OpsWS] invalid %s=%q (expected int in [1,%d]); using default=%d", envOpsWSMaxConns, v, math.MaxInt32, cfg.MaxConns)
 		}
 	}
 	if v := strings.TrimSpace(os.Getenv(envOpsWSMaxConnsPerIP)); v != "" {
-		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 && parsed <= math.MaxInt32 {
 			cfg.MaxConnsPerIP = int32(parsed)
 		} else {
-			logger.LegacyPrintf("handler.admin.ops_ws", "[OpsWS] invalid %s=%q (expected int>=0); using default=%d", envOpsWSMaxConnsPerIP, v, cfg.MaxConnsPerIP)
+			logger.LegacyPrintf("handler.admin.ops_ws", "[OpsWS] invalid %s=%q (expected int in [0,%d]); using default=%d", envOpsWSMaxConnsPerIP, v, math.MaxInt32, cfg.MaxConnsPerIP)
 		}
 	}
 	return cfg

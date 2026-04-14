@@ -318,7 +318,10 @@ func (c *billingCache) UpdateAPIKeyRateLimitUsage(ctx context.Context, keyID int
 		int(rateLimitWindow7d.Seconds()),
 	).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
-		log.Printf("Warning: update rate limit usage cache failed for api key %d: %v", keyID, err)
+		// api key id is a sensitive identifier (CodeQL go/clear-text-logging);
+		// drop it from the log line — the returned error is enough for
+		// operators to correlate the failure upstream.
+		log.Printf("Warning: update rate limit usage cache failed: %v", err)
 		return err
 	}
 	return nil

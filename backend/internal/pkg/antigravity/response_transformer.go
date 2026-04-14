@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 )
 
 // TransformGeminiToClaude 将 Gemini 响应转换为 Claude 格式（非流式）
@@ -260,10 +262,10 @@ func (p *NonStreamingProcessor) buildResponse(geminiResp *GeminiResponse, respon
 	if len(geminiResp.Candidates) > 0 {
 		finishReason = geminiResp.Candidates[0].FinishReason
 		if finishReason == "MALFORMED_FUNCTION_CALL" {
-			log.Printf("[Antigravity] MALFORMED_FUNCTION_CALL detected in response for model %s", originalModel)
+			log.Printf("[Antigravity] MALFORMED_FUNCTION_CALL detected in response for model %s", logredact.SafeLogValue(originalModel))
 			if geminiResp.Candidates[0].Content != nil {
 				if b, err := json.Marshal(geminiResp.Candidates[0].Content); err == nil {
-					log.Printf("[Antigravity] Malformed content: %s", string(b))
+					log.Printf("[Antigravity] Malformed content: %s", logredact.SafeLogValue(string(b)))
 				}
 			}
 		}

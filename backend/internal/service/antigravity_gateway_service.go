@@ -22,6 +22,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/tidwall/gjson"
@@ -852,12 +853,14 @@ func shouldAntigravityFallbackToNextURL(err error, statusCode int) bool {
 	return statusCode == http.StatusTooManyRequests
 }
 
-// getSessionID 从 gin.Context 获取 session_id（用于日志追踪）
+// getSessionID 从 gin.Context 获取 session_id（用于日志追踪）。
+// Value is sanitized via logredact.SafeLogValue because the header is
+// client-controlled and flows directly into log-prefix strings.
 func getSessionID(c *gin.Context) string {
 	if c == nil {
 		return ""
 	}
-	return c.GetHeader("session_id")
+	return logredact.SafeLogValue(c.GetHeader("session_id"))
 }
 
 // logPrefix 生成统一的日志前缀

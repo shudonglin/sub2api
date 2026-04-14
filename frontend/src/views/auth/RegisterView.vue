@@ -310,7 +310,7 @@ import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import OidcOAuthSection from '@/components/auth/OidcOAuthSection.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
-import { useAuthStore, useAppStore } from '@/stores'
+import { useAuthStore, useAppStore, usePendingRegistrationStore } from '@/stores'
 import { getPublicSettings, validatePromoCode, validateInvitationCode } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import {
@@ -326,6 +326,7 @@ const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const pendingRegistrationStore = usePendingRegistrationStore()
 
 // ==================== State ====================
 
@@ -705,17 +706,16 @@ async function handleRegister(): Promise<void> {
   try {
     // If email verification is enabled, redirect to verification page
     if (emailVerifyEnabled.value) {
-      // Store registration data in sessionStorage
-      sessionStorage.setItem(
-        'register_data',
-        JSON.stringify({
-          email: formData.email,
-          password: formData.password,
-          turnstile_token: turnstileToken.value,
-          promo_code: formData.promo_code || undefined,
-          invitation_code: formData.invitation_code || undefined
-        })
-      )
+      // Hand off sensitive fields (including password) via an in-memory Pinia
+      // store instead of sessionStorage — avoids clear-text on-disk storage
+      // (CodeQL js/clear-text-storage-of-sensitive-data).
+      pendingRegistrationStore.set({
+        email: formData.email,
+        password: formData.password,
+        turnstile_token: turnstileToken.value,
+        promo_code: formData.promo_code || undefined,
+        invitation_code: formData.invitation_code || undefined
+      })
 
       // Navigate to email verification page
       await router.push('/email-verify')

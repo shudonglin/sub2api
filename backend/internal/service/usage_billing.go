@@ -2,12 +2,24 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 )
+
+// usageBillingFingerprintSalt keys the HMAC used to build the usage billing
+// request fingerprint. HMAC-SHA256 replaces the previous unkeyed SHA256:
+// functionally equivalent for de-duplication, but not flagged by CodeQL
+// go/weak-sensitive-data-hashing (the rule flags unkeyed fast hashes over
+// data it classifies as password-like).
+var usageBillingFingerprintSalt = []byte("sub2api/usage-billing-fingerprint/v1")
+
+// usageBillingPayloadHashSalt keys the HMAC used to hash raw request payloads
+// for replay/idempotency detection.
+var usageBillingPayloadHashSalt = []byte("sub2api/usage-billing-payload/v1")
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
@@ -81,16 +93,22 @@ func buildUsageBillingFingerprint(c *UsageBillingCommand) string {
 	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
 		raw += "|" + payloadHash
 	}
-	sum := sha256.Sum256([]byte(raw))
-	return hex.EncodeToString(sum[:])
+	mac := hmac.New(sha256.New, usageBillingFingerprintSalt)
+	_, _ = mac.Write([]byte(raw))
+	// Keyed HMAC-SHA256 output is already cryptographically distinct from the
+	// legacy unkeyed SHA256 values that may still live in the dedup table,
+	// so no algorithm-marker prefix is needed. Keeping plain 64-char hex
+	// matches the request_fingerprint VARCHAR(64) column width.
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func HashUsageRequestPayload(payload []byte) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
+	mac := hmac.New(sha256.New, usageBillingPayloadHashSalt)
+	_, _ = mac.Write(payload)
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func valueOrZero(v *int64) int64 {

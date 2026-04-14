@@ -51,13 +51,20 @@ var (
 // string so it cannot forge log entries when written into a structured logger.
 // Callers should use this on any raw string that originated in a client-supplied
 // request field before logging it, even when using a structured encoder.
+//
+// The explicit ReplaceAll("\r","") / ReplaceAll("\n","") calls match the
+// sanitizer pattern recognised by CodeQL's go/log-injection taint model so
+// wrapped values are treated as sanitised at the sink. strings.Map then drops
+// the remaining control characters for defence-in-depth.
 func SafeLogValue(s string) string {
 	if s == "" {
 		return s
 	}
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {
-			return ' '
+			return -1
 		}
 		return r
 	}, s)

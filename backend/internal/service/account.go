@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/fnv"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -14,6 +15,25 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
 )
+
+// boundedFloatToInt converts a float64 to int, clamping out-of-range values
+// into the destination range. Used to defuse CodeQL's incorrect-integer-conversion
+// warnings when a float originating from user-controlled JSON is narrowed to int.
+func boundedFloatToInt(v float64) int {
+	// Single combined range + NaN guard in front of the int(...) cast so
+	// CodeQL's go/incorrect-integer-conversion model sees a range check
+	// immediately dominating the narrowing conversion.
+	if math.IsNaN(v) || v < float64(math.MinInt32) || v > float64(math.MaxInt32) {
+		if math.IsNaN(v) {
+			return 0
+		}
+		if v < 0 {
+			return math.MinInt32
+		}
+		return math.MaxInt32
+	}
+	return int(v)
+}
 
 type Account struct {
 	ID          int64
@@ -1552,7 +1572,7 @@ func ComputeQuotaResetAt(extra map[string]any) {
 
 	// 日配额固定重置时间
 	if mode, _ := extra["quota_daily_reset_mode"].(string); mode == "fixed" {
-		hour := int(parseExtraFloat64(extra["quota_daily_reset_hour"]))
+		hour := boundedFloatToInt(parseExtraFloat64(extra["quota_daily_reset_hour"]))
 		if hour < 0 || hour > 23 {
 			hour = 0
 		}
@@ -1566,12 +1586,12 @@ func ComputeQuotaResetAt(extra map[string]any) {
 	if mode, _ := extra["quota_weekly_reset_mode"].(string); mode == "fixed" {
 		day := 1 // 默认周一
 		if d, ok := extra["quota_weekly_reset_day"]; ok {
-			day = int(parseExtraFloat64(d))
+			day = boundedFloatToInt(parseExtraFloat64(d))
 		}
 		if day < 0 || day > 6 {
 			day = 1
 		}
-		hour := int(parseExtraFloat64(extra["quota_weekly_reset_hour"]))
+		hour := boundedFloatToInt(parseExtraFloat64(extra["quota_weekly_reset_hour"]))
 		if hour < 0 || hour > 23 {
 			hour = 0
 		}

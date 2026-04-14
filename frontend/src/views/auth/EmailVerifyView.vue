@@ -175,7 +175,7 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
-import { useAuthStore, useAppStore } from '@/stores'
+import { useAuthStore, useAppStore, usePendingRegistrationStore } from '@/stores'
 import { getPublicSettings, sendVerifyCode } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import {
@@ -190,6 +190,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const pendingRegistrationStore = usePendingRegistrationStore()
 
 // ==================== State ====================
 
@@ -228,20 +229,16 @@ const errors = ref({
 // ==================== Lifecycle ====================
 
 onMounted(async () => {
-  // Load registration data from sessionStorage
-  const registerDataStr = sessionStorage.getItem('register_data')
-  if (registerDataStr) {
-    try {
-      const registerData = JSON.parse(registerDataStr)
-      email.value = registerData.email || ''
-      password.value = registerData.password || ''
-      initialTurnstileToken.value = registerData.turnstile_token || ''
-      promoCode.value = registerData.promo_code || ''
-      invitationCode.value = registerData.invitation_code || ''
-      hasRegisterData.value = !!(email.value && password.value)
-    } catch {
-      hasRegisterData.value = false
-    }
+  // Load registration data from the in-memory Pinia store (never persisted
+  // to disk; see usePendingRegistrationStore for rationale).
+  const registerData = pendingRegistrationStore.get()
+  if (registerData) {
+    email.value = registerData.email || ''
+    password.value = registerData.password || ''
+    initialTurnstileToken.value = registerData.turnstile_token || ''
+    promoCode.value = registerData.promo_code || ''
+    invitationCode.value = registerData.invitation_code || ''
+    hasRegisterData.value = !!(email.value && password.value)
   }
 
   // Load public settings
@@ -405,8 +402,8 @@ async function handleVerify(): Promise<void> {
       invitation_code: invitationCode.value || undefined
     })
 
-    // Clear session data
-    sessionStorage.removeItem('register_data')
+    // Clear pending registration data
+    pendingRegistrationStore.clear()
 
     // Show success toast
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
@@ -425,8 +422,8 @@ async function handleVerify(): Promise<void> {
 }
 
 function handleBack(): void {
-  // Clear session data
-  sessionStorage.removeItem('register_data')
+  // Clear pending registration data
+  pendingRegistrationStore.clear()
 
   // Go back to registration
   router.push('/register')

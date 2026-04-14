@@ -205,7 +205,13 @@ func (s *CRSSyncService) fetchCRSExport(ctx context.Context, baseURL, username, 
 		}
 		normalizedURL = normalized
 	} else {
-		normalized, err := urlvalidator.ValidateURLFormat(normalizedURL, s.cfg.Security.URLAllowlist.AllowInsecureHTTP)
+		// Even when no allowlist is configured, the CRS base URL flows from
+		// an admin-supplied field into outbound HTTP requests. We must still
+		// block obvious SSRF targets (non-http(s) schemes, loopback, RFC1918,
+		// link-local literals) to prevent request forgery (CWE-918).
+		normalized, err := urlvalidator.ValidateHTTPURL(normalizedURL, s.cfg.Security.URLAllowlist.AllowInsecureHTTP, urlvalidator.ValidationOptions{
+			AllowPrivate: s.cfg.Security.URLAllowlist.AllowPrivateHosts,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("invalid base_url: %w", err)
 		}
@@ -215,9 +221,14 @@ func (s *CRSSyncService) fetchCRSExport(ctx context.Context, baseURL, username, 
 		return nil, errors.New("username and password are required")
 	}
 
+	// Always validate the DNS-resolved IP against the private/loopback
+	// blocklist unless AllowPrivateHosts is explicitly enabled; this closes
+	// the DNS-rebinding / hostname-literal SSRF gap when the URL allowlist
+	// feature is disabled.
+	validateResolvedIP := !s.cfg.Security.URLAllowlist.AllowPrivateHosts
 	client, err := httpclient.GetClient(httpclient.Options{
 		Timeout:            20 * time.Second,
-		ValidateResolvedIP: s.cfg.Security.URLAllowlist.Enabled,
+		ValidateResolvedIP: validateResolvedIP,
 		AllowPrivateHosts:  s.cfg.Security.URLAllowlist.AllowPrivateHosts,
 	})
 	if err != nil {

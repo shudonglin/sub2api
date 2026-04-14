@@ -759,9 +759,13 @@ redis:
   # Redis port
   # Redis 端口
   port: 6379
-  # Redis password (leave empty if no password is set)
-  # Redis 密码（如果未设置密码则留空）
-  password: ""
+  # Redis password. REQUIRED in production — never deploy with an empty
+  # password. Replace the placeholder below with a strong secret (or inject
+  # via environment / secrets manager). For a purely local dev instance with
+  # no auth you may replace with "" at your own risk.
+  # Redis 密码。生产环境必须设置强密码，严禁使用空密码部署；
+  # 请在部署前将占位符替换为真实密码或通过环境变量注入。
+  password: "CHANGEME_SET_BEFORE_DEPLOY"
   # Database number (0-15)
   # 数据库编号（0-15）
   db: 0

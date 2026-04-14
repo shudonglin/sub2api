@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 
 	coderws "github.com/coder/websocket"
 	"github.com/gin-gonic/gin"
@@ -465,11 +466,11 @@ func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, sta
 
 	if c != nil {
 		if userAgent := strings.TrimSpace(c.GetHeader("User-Agent")); userAgent != "" {
-			fields = append(fields, zap.String("request_user_agent", userAgent))
+			fields = append(fields, zap.String("request_user_agent", logredact.SafeLogValue(userAgent)))
 		}
 		if v, ok := c.Get(opsModelKey); ok {
 			if model, ok := v.(string); ok && strings.TrimSpace(model) != "" {
-				fields = append(fields, zap.String("request_model", strings.TrimSpace(model)))
+				fields = append(fields, zap.String("request_model", logredact.SafeLogValue(strings.TrimSpace(model))))
 			}
 		}
 		if v, ok := c.Get(opsAccountIDKey); ok {
@@ -479,9 +480,9 @@ func (h *OpenAIGatewayHandler) logOpenAIRemoteCompactOutcome(c *gin.Context, sta
 		}
 		if c.Writer != nil {
 			if upstreamRequestID := strings.TrimSpace(c.Writer.Header().Get("x-request-id")); upstreamRequestID != "" {
-				fields = append(fields, zap.String("upstream_request_id", upstreamRequestID))
+				fields = append(fields, zap.String("upstream_request_id", logredact.SafeLogValue(upstreamRequestID)))
 			} else if upstreamRequestID := strings.TrimSpace(c.Writer.Header().Get("X-Request-Id")); upstreamRequestID != "" {
-				fields = append(fields, zap.String("upstream_request_id", upstreamRequestID))
+				fields = append(fields, zap.String("upstream_request_id", logredact.SafeLogValue(upstreamRequestID)))
 			}
 		}
 	}
@@ -1047,11 +1048,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	if err != nil {
 		reqLog.Warn("openai.websocket_accept_failed",
 			zap.Error(err),
-			zap.String("client_ip", clientIP),
-			zap.String("request_user_agent", userAgent),
-			zap.String("upgrade_header", strings.TrimSpace(c.GetHeader("Upgrade"))),
-			zap.String("connection_header", strings.TrimSpace(c.GetHeader("Connection"))),
-			zap.String("sec_websocket_version", strings.TrimSpace(c.GetHeader("Sec-WebSocket-Version"))),
+			zap.String("client_ip", logredact.SafeLogValue(clientIP)),
+			zap.String("request_user_agent", logredact.SafeLogValue(userAgent)),
+			zap.String("upgrade_header", logredact.SafeLogValue(strings.TrimSpace(c.GetHeader("Upgrade")))),
+			zap.String("connection_header", logredact.SafeLogValue(strings.TrimSpace(c.GetHeader("Connection")))),
+			zap.String("sec_websocket_version", logredact.SafeLogValue(strings.TrimSpace(c.GetHeader("Sec-WebSocket-Version")))),
 			zap.Bool("has_sec_websocket_key", strings.TrimSpace(c.GetHeader("Sec-WebSocket-Key")) != ""),
 		)
 		return
@@ -1069,9 +1070,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeStatus, closeReason := summarizeWSCloseErrorForLog(err)
 		reqLog.Warn("openai.websocket_read_first_message_failed",
 			zap.Error(err),
-			zap.String("client_ip", clientIP),
-			zap.String("close_status", closeStatus),
-			zap.String("close_reason", closeReason),
+			zap.String("client_ip", logredact.SafeLogValue(clientIP)),
+			zap.String("close_status", logredact.SafeLogValue(closeStatus)),
+			zap.String("close_reason", logredact.SafeLogValue(closeReason)),
 			zap.Duration("read_timeout", 30*time.Second),
 		)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "missing first response.create message")

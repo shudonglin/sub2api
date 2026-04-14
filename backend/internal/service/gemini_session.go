@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
@@ -10,6 +11,13 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	"github.com/cespare/xxhash/v2"
 )
+
+// geminiPrefixHashSalt keys the HMAC-SHA256 used to derive Gemini session
+// partition prefixes. HMAC replaces the unkeyed SHA256 so that dumping Redis
+// keys cannot be reversed into the underlying (userID, apiKeyID, ip, ...)
+// tuple via a precomputed table. Sessions existing under the old SHA256-based
+// prefix will fall through to a fresh sticky assignment after rollout.
+var geminiPrefixHashSalt = []byte("sub2api/gemini-prefix-hash/v1")
 
 // shortHash 使用 XXHash64 + Base36 生成短 hash（16 字符）
 // XXHash64 比 SHA256 快约 10 倍，Base36 比 Hex 短约 20%
@@ -60,7 +68,9 @@ func GenerateGeminiPrefixHash(userID, apiKeyID int64, ip, userAgent, platform, m
 		platform + ":" +
 		model
 
-	hash := sha256.Sum256([]byte(combined))
+	mac := hmac.New(sha256.New, geminiPrefixHashSalt)
+	_, _ = mac.Write([]byte(combined))
+	hash := mac.Sum(nil)
 	// 取前 12 字节，Base64 编码后正好 16 字符
 	return base64.RawURLEncoding.EncodeToString(hash[:12])
 }

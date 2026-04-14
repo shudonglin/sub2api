@@ -249,7 +249,6 @@ const availableModels = ref<ClaudeModel[]>([])
 const selectedModelId = ref('')
 const testPrompt = ref('')
 const loadingModels = ref(false)
-let eventSource: EventSource | null = null
 const generatedImages = ref<PreviewImage[]>([])
 const prioritizedGeminiModels = ['gemini-3.1-flash-image', 'gemini-2.5-flash-image', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-2.0-flash']
 const supportsGeminiImageTest = computed(() => {
@@ -338,10 +337,9 @@ const handleClose = () => {
 }
 
 const closeEventSource = () => {
-  if (eventSource) {
-    eventSource.close()
-    eventSource = null
-  }
+  // The SSE stream is consumed via fetch()+reader (see startTest), so there
+  // is no EventSource instance to close here. Kept as a no-op hook in case a
+  // future implementation switches back to EventSource.
 }
 
 const addLine = (text: string, className: string = 'text-gray-300') => {

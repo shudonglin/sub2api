@@ -24,6 +24,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/apicompat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/cespare/xxhash/v2"
@@ -898,7 +899,7 @@ func logCodexCLIOnlyDetection(ctx context.Context, c *gin.Context, account *Acco
 		zap.Int64("account_id", accountID),
 		zap.Bool("codex_cli_only_enabled", result.Enabled),
 		zap.Bool("codex_official_client_match", result.Matched),
-		zap.String("reject_reason", result.Reason),
+		zap.String("reject_reason", logredact.SafeLogValue(result.Reason)),
 	}
 	if apiKeyID > 0 {
 		fields = append(fields, zap.Int64("api_key_id", apiKeyID))
@@ -920,20 +921,23 @@ func appendCodexCLIOnlyRejectedRequestFields(fields []zap.Field, c *gin.Context,
 
 	req := c.Request
 	requestModel, requestStream, promptCacheKey := extractOpenAIRequestMetaFromBody(body)
+	// All tainted request strings (path/query/user-agent/etc.) are wrapped
+	// with logredact.SafeLogValue to strip CR/LF and other control chars
+	// before they reach the console encoder (go/log-injection, CWE-117).
 	fields = append(fields,
-		zap.String("request_method", strings.TrimSpace(req.Method)),
-		zap.String("request_path", strings.TrimSpace(req.URL.Path)),
-		zap.String("request_query", strings.TrimSpace(req.URL.RawQuery)),
-		zap.String("request_host", strings.TrimSpace(req.Host)),
-		zap.String("request_client_ip", strings.TrimSpace(c.ClientIP())),
-		zap.String("request_remote_addr", strings.TrimSpace(req.RemoteAddr)),
-		zap.String("request_user_agent", strings.TrimSpace(req.Header.Get("User-Agent"))),
-		zap.String("request_content_type", strings.TrimSpace(req.Header.Get("Content-Type"))),
+		zap.String("request_method", logredact.SafeLogValue(strings.TrimSpace(req.Method))),
+		zap.String("request_path", logredact.SafeLogValue(strings.TrimSpace(req.URL.Path))),
+		zap.String("request_query", logredact.SafeLogValue(strings.TrimSpace(req.URL.RawQuery))),
+		zap.String("request_host", logredact.SafeLogValue(strings.TrimSpace(req.Host))),
+		zap.String("request_client_ip", logredact.SafeLogValue(strings.TrimSpace(c.ClientIP()))),
+		zap.String("request_remote_addr", logredact.SafeLogValue(strings.TrimSpace(req.RemoteAddr))),
+		zap.String("request_user_agent", logredact.SafeLogValue(strings.TrimSpace(req.Header.Get("User-Agent")))),
+		zap.String("request_content_type", logredact.SafeLogValue(strings.TrimSpace(req.Header.Get("Content-Type")))),
 		zap.Int64("request_content_length", req.ContentLength),
 		zap.Bool("request_stream", requestStream),
 	)
 	if requestModel != "" {
-		fields = append(fields, zap.String("request_model", requestModel))
+		fields = append(fields, zap.String("request_model", logredact.SafeLogValue(requestModel)))
 	}
 	if promptCacheKey != "" {
 		fields = append(fields, zap.String("request_prompt_cache_key_sha256", hashSensitiveValueForLog(promptCacheKey)))
@@ -956,7 +960,9 @@ func snapshotCodexCLIOnlyHeaders(header http.Header) map[string]string {
 		if value == "" {
 			continue
 		}
-		result[strings.ToLower(key)] = truncateString(value, codexCLIOnlyHeaderValueMaxBytes)
+		// Header values are attacker-controlled; strip control chars so they
+		// cannot forge extra log lines (go/log-injection, CWE-117).
+		result[strings.ToLower(key)] = logredact.SafeLogValue(truncateString(value, codexCLIOnlyHeaderValueMaxBytes))
 	}
 	return result
 }
@@ -1004,10 +1010,10 @@ func logOpenAIInstructionsRequiredDebug(
 	fields := []zap.Field{
 		zap.String("component", "service.openai_gateway"),
 		zap.Int64("account_id", accountID),
-		zap.String("account_name", accountName),
+		zap.String("account_name", logredact.SafeLogValue(accountName)),
 		zap.Int("upstream_status_code", upstreamStatusCode),
-		zap.String("upstream_error_message", msg),
-		zap.String("request_user_agent", userAgent),
+		zap.String("upstream_error_message", logredact.SafeLogValue(msg)),
+		zap.String("request_user_agent", logredact.SafeLogValue(userAgent)),
 		zap.Bool("codex_official_client_match", openai.IsCodexOfficialClientByHeaders(userAgent, originator)),
 	}
 	fields = appendCodexCLIOnlyRejectedRequestFields(fields, c, requestBody)
@@ -2630,10 +2636,10 @@ func logOpenAIPassthroughInstructionsRejected(
 	fields := []zap.Field{
 		zap.String("component", "service.openai_gateway"),
 		zap.Int64("account_id", accountID),
-		zap.String("account_name", accountName),
-		zap.String("account_type", accountType),
-		zap.String("request_model", strings.TrimSpace(reqModel)),
-		zap.String("reject_reason", strings.TrimSpace(rejectReason)),
+		zap.String("account_name", logredact.SafeLogValue(accountName)),
+		zap.String("account_type", logredact.SafeLogValue(accountType)),
+		zap.String("request_model", logredact.SafeLogValue(strings.TrimSpace(reqModel))),
+		zap.String("reject_reason", logredact.SafeLogValue(strings.TrimSpace(rejectReason))),
 	}
 	fields = appendCodexCLIOnlyRejectedRequestFields(fields, c, body)
 	logger.FromContext(ctx).With(fields...).Warn("OpenAI passthrough 本地拦截：Codex 请求缺少有效 instructions")
@@ -2888,7 +2894,9 @@ func collectOpenAIPassthroughTimeoutHeaders(h http.Header) []string {
 		if isOpenAIPassthroughTimeoutHeader(lowerKey) {
 			entry := lowerKey
 			if len(values) > 0 {
-				entry = fmt.Sprintf("%s=%s", lowerKey, strings.Join(values, "|"))
+				// Strip CR/LF from attacker-controlled header values before
+				// they enter logs (go/log-injection, CWE-117).
+				entry = fmt.Sprintf("%s=%s", lowerKey, logredact.SafeLogValue(strings.Join(values, "|")))
 			}
 			matched = append(matched, entry)
 		}
