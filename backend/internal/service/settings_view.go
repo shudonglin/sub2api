@@ -108,6 +108,18 @@ type SystemSettings struct {
 	EnableMetadataUserIDAnonymization bool // 是否匿名化 metadata.user_id 中的 device/account 标识（默认 false）
 	EnablePrivacyMode                 bool // 隐私强化模式：强制开启指纹统一 + metadata 匿名化 + 会话 ID 伪装（默认 true）
 	EnableCCHSigning                  bool // 是否对 billing header cch 进行签名（默认 false）
+
+	// Web Search Emulation
+	WebSearchEmulationEnabled bool // 是否启用 web search 模拟
+
+	// Balance low notification
+	BalanceLowNotifyEnabled     bool
+	BalanceLowNotifyThreshold   float64
+	BalanceLowNotifyRechargeURL string
+
+	// Account quota notification
+	AccountQuotaNotifyEnabled bool
+	AccountQuotaNotifyEmails  []NotifyEmailEntry
 }
 
 type DefaultSubscriptionSetting struct {
@@ -143,10 +155,15 @@ type PublicSettings struct {
 
 	LinuxDoOAuthEnabled   bool
 	BackendModeEnabled    bool
+	PaymentEnabled        bool
 	OIDCOAuthEnabled      bool
 	OIDCOAuthProviderName string
-	PaymentEnabled        bool
 	Version               string
+
+	BalanceLowNotifyEnabled     bool
+	AccountQuotaNotifyEnabled   bool
+	BalanceLowNotifyThreshold   float64
+	BalanceLowNotifyRechargeURL string
 }
 
 // StreamTimeoutSettings 流超时处理配置（仅控制超时后的处理方式，超时判定由网关配置控制）
