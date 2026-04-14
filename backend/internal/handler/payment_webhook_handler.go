@@ -57,6 +57,12 @@ func (h *PaymentWebhookHandler) StripeWebhook(c *gin.Context) {
 	h.handleNotify(c, payment.TypeStripe)
 }
 
+// AirwallexWebhook handles Airwallex webhook events.
+// POST /api/v1/payment/webhook/airwallex
+func (h *PaymentWebhookHandler) AirwallexWebhook(c *gin.Context) {
+	h.handleNotify(c, payment.TypeAirwallex)
+}
+
 // handleNotify is the shared logic for all provider webhook handlers.
 func (h *PaymentWebhookHandler) handleNotify(c *gin.Context, providerKey string) {
 	var rawBody string
@@ -152,6 +158,8 @@ func writeSuccessResponse(c *gin.Context, providerKey string) {
 		c.JSON(http.StatusOK, wxpaySuccessResponse{Code: wxpaySuccessCode, Message: wxpaySuccessMessage})
 	case payment.TypeStripe:
 		c.String(http.StatusOK, "")
+	case payment.TypeAirwallex:
+		c.JSON(http.StatusOK, gin.H{"received": true})
 	default:
 		c.String(http.StatusOK, "success")
 	}

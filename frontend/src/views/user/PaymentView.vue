@@ -543,8 +543,8 @@ async function createOrder(orderAmount: number, orderType: string, planId?: numb
         orderType,
       }
       paymentPhase.value = 'stripe'
-    } else if (isMobileDevice() && result.pay_url) {
-      // Mobile + pay_url: redirect directly instead of QR/popup (mobile browsers block popups)
+    } else if ((isMobileDevice() || selectedMethod.value === 'airwallex') && result.pay_url) {
+      // Mobile + pay_url, or Airwallex HPP: full-page redirect (no popup)
       paymentState.value = {
         orderId: result.order_id, qrCode: '', expiresAt: result.expires_at || '',
         paymentType: selectedMethod.value, payUrl: result.pay_url,
@@ -552,7 +552,7 @@ async function createOrder(orderAmount: number, orderType: string, planId?: numb
         orderType,
       }
       paymentPhase.value = 'paying'
-      window.location.href = result.pay_url
+      window.location.assign(result.pay_url)
       return
     } else if (result.qr_code) {
       // QR mode: show QR code inline
