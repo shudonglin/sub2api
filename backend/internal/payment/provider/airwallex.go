@@ -48,9 +48,6 @@ const (
 	airwallexAPIBaseDemo = "https://api-demo.airwallex.com"
 	airwallexAPIBaseProd = "https://api.airwallex.com"
 
-	airwallexHPPBaseDemo = "https://checkout-demo.airwallex.com"
-	airwallexHPPBaseProd = "https://checkout.airwallex.com"
-
 	// airwallexTokenRefreshSkew refreshes the cached bearer token this much
 	// before upstream expiry to avoid edge-case 401s.
 	airwallexTokenRefreshSkew = 60 * time.Second
@@ -152,14 +149,6 @@ func (a *Airwallex) apiBase() string {
 		return airwallexAPIBaseDemo
 	}
 	return airwallexAPIBaseProd
-}
-
-// hppBase returns the Airwallex Hosted Payment Page base URL.
-func (a *Airwallex) hppBase() string {
-	if a.environment() == airwallexEnvDemo {
-		return airwallexHPPBaseDemo
-	}
-	return airwallexHPPBaseProd
 }
 
 // ── Auth token cache ─────────────────────────────────────────────────────────
@@ -274,17 +263,7 @@ func (a *Airwallex) apiRequest(ctx context.Context, method, path string, body, o
 	return nil
 }
 
-// ── PaymentIntent / Refund payloads ──────────────────────────────────────────
-
-type airwallexPaymentIntent struct {
-	ID              string          `json:"id"`
-	ClientSecret    string          `json:"client_secret"`
-	Status          string          `json:"status"`
-	Amount          decimal.Decimal `json:"amount"`
-	Currency        string          `json:"currency"`
-	MerchantOrderID string          `json:"merchant_order_id,omitempty"`
-	Metadata        map[string]any  `json:"metadata,omitempty"`
-}
+// ── Payment Link / Refund payloads ───────────────────────────────────────────
 
 type airwallexRefund struct {
 	ID     string          `json:"id"`
@@ -292,24 +271,31 @@ type airwallexRefund struct {
 	Amount decimal.Decimal `json:"amount"`
 }
 
-type airwallexProduct struct {
-	Name      string          `json:"name"`
-	Quantity  int             `json:"quantity"`
-	UnitPrice decimal.Decimal `json:"unit_price"`
-}
-
-type airwallexOrder struct {
-	Products []airwallexProduct `json:"products"`
-}
-
-type airwallexCreateIntentReq struct {
+// airwallexPaymentLinkReq is the request body for /api/v1/pa/payment_links/create.
+// Payment Links are Airwallex's hosted checkout product and the only flow that
+// returns a URL safe to redirect a browser to directly (pay-demo.airwallex.com/<short>).
+type airwallexPaymentLinkReq struct {
 	RequestID       string          `json:"request_id"`
 	MerchantOrderID string          `json:"merchant_order_id"`
+	Title           string          `json:"title"`
 	Amount          decimal.Decimal `json:"amount"`
 	Currency        string          `json:"currency"`
 	Metadata        map[string]any  `json:"metadata,omitempty"`
-	Order           airwallexOrder  `json:"order"`
+	Reusable        bool            `json:"reusable"`
 	ReturnURL       string          `json:"return_url,omitempty"`
+}
+
+// airwallexPaymentLink is the response from payment_links/create. The `url`
+// field is the short hosted page URL we return as PayURL.
+type airwallexPaymentLink struct {
+	ID                           string          `json:"id"`
+	URL                          string          `json:"url"`
+	Status                       string          `json:"status"`
+	Amount                       decimal.Decimal `json:"amount"`
+	Currency                     string          `json:"currency"`
+	Active                       bool            `json:"active"`
+	SuccessfulPaymentIntentCount int             `json:"successful_payment_intent_count"`
+	Metadata                     map[string]any  `json:"metadata,omitempty"`
 }
 
 type airwallexCreateRefundReq struct {
@@ -319,29 +305,14 @@ type airwallexCreateRefundReq struct {
 	Reason          string          `json:"reason,omitempty"`
 }
 
-// ── HPP URL ──────────────────────────────────────────────────────────────────
-
-// buildHPPURL builds the Hosted Payment Page redirect URL for the given intent.
-func (a *Airwallex) buildHPPURL(intentID, clientSecret, currency string) string {
-	u, err := url.Parse(a.hppBase() + "/pay")
-	if err != nil {
-		// hppBase is a constant; this should not happen in practice.
-		return ""
-	}
-	q := u.Query()
-	q.Set("intent_id", intentID)
-	q.Set("client_secret", clientSecret)
-	q.Set("mode", "payment")
-	if currency != "" {
-		q.Set("currency", currency)
-	}
-	u.RawQuery = q.Encode()
-	return u.String()
-}
-
 // ── Provider interface implementation ────────────────────────────────────────
 
-// CreatePayment creates a PaymentIntent and returns the HPP redirect URL.
+// CreatePayment creates an Airwallex Payment Link (hosted checkout) and
+// returns its short pay-demo.airwallex.com URL as the redirect target.
+// When the user completes payment on the hosted page, Airwallex fires a
+// payment_intent.succeeded webhook with merchant_order_id and metadata
+// inherited from this request, which VerifyNotification below matches back
+// to our internal order.
 func (a *Airwallex) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
 	amount, err := decimal.NewFromString(req.Amount)
 	if err != nil {
@@ -357,57 +328,60 @@ func (a *Airwallex) CreatePayment(ctx context.Context, req payment.CreatePayment
 		returnURL = a.config["returnUrl"]
 	}
 
-	body := airwallexCreateIntentReq{
+	title := req.Subject
+	if strings.TrimSpace(title) == "" {
+		title = fmt.Sprintf("%s %s", amount.String(), currency)
+	}
+
+	body := airwallexPaymentLinkReq{
 		RequestID:       uuid.NewString(),
 		MerchantOrderID: req.OrderID,
+		Title:           title,
 		Amount:          amount,
 		Currency:        currency,
 		Metadata:        map[string]any{"orderId": req.OrderID},
-		Order: airwallexOrder{
-			Products: []airwallexProduct{{
-				Name:      req.Subject,
-				Quantity:  1,
-				UnitPrice: amount,
-			}},
-		},
-		ReturnURL: returnURL,
+		Reusable:        false,
+		ReturnURL:       returnURL,
 	}
 
-	var intent airwallexPaymentIntent
-	if err := a.apiRequest(ctx, http.MethodPost, "/api/v1/pa/payment_intents/create", body, &intent); err != nil {
+	var link airwallexPaymentLink
+	if err := a.apiRequest(ctx, http.MethodPost, "/api/v1/pa/payment_links/create", body, &link); err != nil {
 		return nil, fmt.Errorf("airwallex create payment: %w", err)
 	}
 
 	return &payment.CreatePaymentResponse{
-		TradeNo: intent.ID,
-		PayURL:  a.buildHPPURL(intent.ID, intent.ClientSecret, currency),
+		TradeNo: link.ID,
+		PayURL:  link.URL,
 	}, nil
 }
 
-// QueryOrder fetches a PaymentIntent and maps Airwallex status to provider status.
+// QueryOrder fetches a Payment Link and maps its status to provider status.
+// TradeNo is the payment_link.id returned by CreatePayment.
 func (a *Airwallex) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
 	if tradeNo == "" {
 		return nil, fmt.Errorf("airwallex query order: empty tradeNo")
 	}
-	var intent airwallexPaymentIntent
-	if err := a.apiRequest(ctx, http.MethodGet, "/api/v1/pa/payment_intents/"+url.PathEscape(tradeNo), nil, &intent); err != nil {
+	var link airwallexPaymentLink
+	if err := a.apiRequest(ctx, http.MethodGet, "/api/v1/pa/payment_links/"+url.PathEscape(tradeNo), nil, &link); err != nil {
 		return nil, fmt.Errorf("airwallex query order: %w", err)
 	}
 
-	amt, _ := intent.Amount.Float64()
+	amt, _ := link.Amount.Float64()
 	return &payment.QueryOrderResponse{
-		TradeNo: intent.ID,
-		Status:  mapAirwallexStatus(intent.Status),
+		TradeNo: link.ID,
+		Status:  mapAirwallexLinkStatus(link.Status, link.SuccessfulPaymentIntentCount),
 		Amount:  amt,
 	}, nil
 }
 
-// mapAirwallexStatus maps Airwallex PaymentIntent status to provider status.
-func mapAirwallexStatus(s string) string {
-	switch s {
-	case airwallexStatusSucceeded:
+// mapAirwallexLinkStatus maps Payment Link status + paid count to provider status.
+// Link statuses observed: UNPAID, PAID, EXPIRED, INACTIVE.
+func mapAirwallexLinkStatus(status string, paidCount int) string {
+	if paidCount > 0 || status == "PAID" {
 		return payment.ProviderStatusPaid
-	case airwallexStatusCancelled, airwallexStatusExpired:
+	}
+	switch status {
+	case "EXPIRED", "INACTIVE":
 		return payment.ProviderStatusFailed
 	default:
 		return payment.ProviderStatusPending
@@ -532,5 +506,22 @@ func (a *Airwallex) Refund(ctx context.Context, req payment.RefundRequest) (*pay
 	}, nil
 }
 
+// CancelPayment disables the hosted Payment Link upstream so the URL can no
+// longer be paid. TradeNo is the payment_link.id returned by CreatePayment.
+// Safe to call repeatedly — Airwallex returns 200 on an already-disabled link.
+func (a *Airwallex) CancelPayment(ctx context.Context, tradeNo string) error {
+	if tradeNo == "" {
+		return fmt.Errorf("airwallex cancel: empty tradeNo")
+	}
+	path := "/api/v1/pa/payment_links/" + url.PathEscape(tradeNo) + "/disable"
+	if err := a.apiRequest(ctx, http.MethodPost, path, map[string]any{"request_id": uuid.NewString()}, nil); err != nil {
+		return fmt.Errorf("airwallex cancel: %w", err)
+	}
+	return nil
+}
+
 // Ensure interface compliance.
-var _ payment.Provider = (*Airwallex)(nil)
+var (
+	_ payment.Provider           = (*Airwallex)(nil)
+	_ payment.CancelableProvider = (*Airwallex)(nil)
+)

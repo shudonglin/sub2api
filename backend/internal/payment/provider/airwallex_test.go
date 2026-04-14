@@ -97,9 +97,6 @@ func TestAirwallexDefaults(t *testing.T) {
 	if a.apiBase() != airwallexAPIBaseProd {
 		t.Errorf("default apiBase = %q, want %q", a.apiBase(), airwallexAPIBaseProd)
 	}
-	if a.hppBase() != airwallexHPPBaseProd {
-		t.Errorf("default hppBase = %q, want %q", a.hppBase(), airwallexHPPBaseProd)
-	}
 
 	demo, err := NewAirwallex("", map[string]string{"clientId": "c", "apiKey": "k", "environment": "demo", "currency": "sgd"})
 	if err != nil {
@@ -108,51 +105,11 @@ func TestAirwallexDefaults(t *testing.T) {
 	if demo.apiBase() != airwallexAPIBaseDemo {
 		t.Errorf("demo apiBase = %q, want %q", demo.apiBase(), airwallexAPIBaseDemo)
 	}
-	if demo.hppBase() != airwallexHPPBaseDemo {
-		t.Errorf("demo hppBase = %q, want %q", demo.hppBase(), airwallexHPPBaseDemo)
-	}
 	if demo.currency() != "SGD" {
 		t.Errorf("currency uppercased = %q, want SGD", demo.currency())
 	}
 	if !strings.Contains(demo.Name(), "Airwallex") && !strings.Contains(demo.Name(), "airwallex") {
 		t.Errorf("Name() = %q", demo.Name())
-	}
-}
-
-func TestBuildHPPURL(t *testing.T) {
-	t.Parallel()
-	a, err := NewAirwallex("", map[string]string{
-		"clientId":    "c",
-		"apiKey":      "k",
-		"environment": "demo",
-		"currency":    "USD",
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	got := a.buildHPPURL("int_123", "secret_abc", "USD")
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("invalid URL: %v", err)
-	}
-	if u.Host != "checkout-demo.airwallex.com" {
-		t.Errorf("host = %q, want checkout-demo.airwallex.com", u.Host)
-	}
-	if u.Path != "/pay" {
-		t.Errorf("path = %q, want /pay", u.Path)
-	}
-	q := u.Query()
-	if q.Get("intent_id") != "int_123" {
-		t.Errorf("intent_id = %q", q.Get("intent_id"))
-	}
-	if q.Get("client_secret") != "secret_abc" {
-		t.Errorf("client_secret = %q", q.Get("client_secret"))
-	}
-	if q.Get("mode") != "payment" {
-		t.Errorf("mode = %q, want payment", q.Get("mode"))
-	}
-	if q.Get("currency") != "USD" {
-		t.Errorf("currency = %q", q.Get("currency"))
 	}
 }
 
@@ -307,18 +264,23 @@ func TestAirwallexVerifyNotification(t *testing.T) {
 	})
 }
 
-func TestMapAirwallexStatus(t *testing.T) {
+func TestMapAirwallexLinkStatus(t *testing.T) {
 	t.Parallel()
-	cases := map[string]string{
-		"SUCCEEDED":        payment.ProviderStatusPaid,
-		"CANCELLED":        payment.ProviderStatusFailed,
-		"EXPIRED":          payment.ProviderStatusFailed,
-		"REQUIRES_PAYMENT": payment.ProviderStatusPending,
-		"":                 payment.ProviderStatusPending,
+	cases := []struct {
+		status    string
+		paidCount int
+		want      string
+	}{
+		{"UNPAID", 0, payment.ProviderStatusPending},
+		{"UNPAID", 1, payment.ProviderStatusPaid},
+		{"PAID", 0, payment.ProviderStatusPaid},
+		{"EXPIRED", 0, payment.ProviderStatusFailed},
+		{"INACTIVE", 0, payment.ProviderStatusFailed},
+		{"", 0, payment.ProviderStatusPending},
 	}
-	for in, want := range cases {
-		if got := mapAirwallexStatus(in); got != want {
-			t.Errorf("mapAirwallexStatus(%q) = %q, want %q", in, got, want)
+	for _, c := range cases {
+		if got := mapAirwallexLinkStatus(c.status, c.paidCount); got != c.want {
+			t.Errorf("mapAirwallexLinkStatus(%q, %d) = %q, want %q", c.status, c.paidCount, got, c.want)
 		}
 	}
 }

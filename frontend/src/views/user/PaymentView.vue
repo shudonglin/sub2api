@@ -60,12 +60,18 @@
               />
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
-            <div v-if="enabledMethods.length >= 1" class="card p-6">
+            <!-- Multi-method picker shown only when more than one method is configured.
+                 With a single method, the payment provider is implicit; we surface it
+                 as a compact label and let the Confirm button drive the flow. -->
+            <div v-if="enabledMethods.length > 1" class="card p-6">
               <PaymentMethodSelector
                 :methods="methodOptions"
                 :selected="selectedMethod"
                 @select="selectedMethod = $event"
               />
+            </div>
+            <div v-else-if="enabledMethods.length === 1" class="px-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('payment.paidWith', { provider: soleMethodLabel }) }}
             </div>
             <div v-if="feeRate > 0 && validAmount > 0" class="card p-6">
               <div class="space-y-2 text-sm">
@@ -145,12 +151,15 @@
                   </div>
                 </div>
               </div>
-              <div v-if="enabledMethods.length >= 1" class="card p-6">
+              <div v-if="enabledMethods.length > 1" class="card p-6">
                 <PaymentMethodSelector
                   :methods="subMethodOptions"
                   :selected="selectedMethod"
                   @select="selectedMethod = $event"
                 />
+              </div>
+              <div v-else-if="enabledMethods.length === 1" class="px-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('payment.paidWith', { provider: soleMethodLabel }) }}
               </div>
               <div v-if="feeRate > 0 && selectedPlan.price > 0" class="card p-6">
                 <div class="space-y-2 text-sm">
@@ -390,6 +399,17 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
   })
 )
 
+// Human-readable label for the sole configured payment method. Used in the
+// inline "Paying with X" hint we show when there's only one method (instead
+// of a selector card with a single redundant option).
+const soleMethodLabel = computed(() => {
+  const only = enabledMethods.value[0]
+  if (!only) return ''
+  const key = `payment.methods.${only}`
+  const translated = t(key)
+  return translated === key ? only : translated
+})
+
 const feeRate = computed(() => selectedLimit.value?.fee_rate ?? 0)
 const feeAmount = computed(() =>
   feeRate.value > 0 && validAmount.value > 0
@@ -543,8 +563,11 @@ async function createOrder(orderAmount: number, orderType: string, planId?: numb
         orderType,
       }
       paymentPhase.value = 'stripe'
-    } else if ((isMobileDevice() || selectedMethod.value === 'airwallex') && result.pay_url) {
-      // Mobile + pay_url, or Airwallex HPP: full-page redirect (no popup)
+    } else if (isMobileDevice() && result.pay_url) {
+      // Mobile + pay_url: full-page redirect (popups don't work reliably on mobile).
+      // Desktop redirect flows (including Airwallex HPP) fall through to the
+      // popup branch below so the status panel with the Cancel button stays
+      // visible on the sub2api tab while the payment page opens in a new window.
       paymentState.value = {
         orderId: result.order_id, qrCode: '', expiresAt: result.expires_at || '',
         paymentType: selectedMethod.value, payUrl: result.pay_url,
