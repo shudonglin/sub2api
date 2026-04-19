@@ -5133,19 +5133,8 @@ func (s *GatewayService) handleNonStreamingResponseAnthropicAPIKeyPassthrough(
 		s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 	}
 
-	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
-	body, err := readUpstreamResponseBodyLimited(resp.Body, maxBytes)
+	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, anthropicTooLargeError)
 	if err != nil {
-		if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-			c.JSON(http.StatusBadGateway, gin.H{
-				"type": "error",
-				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream response too large",
-				},
-			})
-		}
 		return nil, err
 	}
 
@@ -5511,19 +5500,8 @@ func (s *GatewayService) handleBedrockNonStreamingResponse(
 	c *gin.Context,
 	account *Account,
 ) (*ClaudeUsage, error) {
-	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
-	body, err := readUpstreamResponseBodyLimited(resp.Body, maxBytes)
+	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, anthropicTooLargeError)
 	if err != nil {
-		if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-			c.JSON(http.StatusBadGateway, gin.H{
-				"type": "error",
-				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream response too large",
-				},
-			})
-		}
 		return nil, err
 	}
 
@@ -7188,19 +7166,8 @@ func (s *GatewayService) handleNonStreamingResponse(ctx context.Context, resp *h
 	// 更新5h窗口状态
 	s.rateLimitService.UpdateSessionWindow(ctx, account, resp.Header)
 
-	maxBytes := resolveUpstreamResponseReadLimit(s.cfg)
-	body, err := readUpstreamResponseBodyLimited(resp.Body, maxBytes)
+	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, anthropicTooLargeError)
 	if err != nil {
-		if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-			c.JSON(http.StatusBadGateway, gin.H{
-				"type": "error",
-				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream response too large",
-				},
-			})
-		}
 		return nil, err
 	}
 
@@ -7363,8 +7330,10 @@ func postUsageBilling(ctx context.Context, p *postUsageBillingParams, deps *bill
 	cost := p.Cost
 
 	if p.IsSubscriptionBill {
-		if cost.TotalCost > 0 {
-			if err := deps.userSubRepo.IncrementUsage(billingCtx, p.Subscription.ID, cost.TotalCost); err != nil {
+		// Subscription usage tracked by ActualCost so group rate multiplier
+		// consumes the quota at the expected speed.
+		if cost.ActualCost > 0 {
+			if err := deps.userSubRepo.IncrementUsage(billingCtx, p.Subscription.ID, cost.ActualCost); err != nil {
 				slog.Error("increment subscription usage failed", "subscription_id", p.Subscription.ID, "error", err)
 			}
 		}
@@ -7463,9 +7432,13 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		}
 	}
 
+	// Record subscription / balance cost using ActualCost so the group (and any
+	// user-specific) rate multiplier consumes subscription quota at the expected
+	// speed. TotalCost remains the raw (pre-multiplier) value; downstream guards
+	// on "> 0" still correctly skip free subscriptions (RateMultiplier == 0).
 	if p.IsSubscriptionBill && p.Subscription != nil && p.Cost.TotalCost > 0 {
 		cmd.SubscriptionID = &p.Subscription.ID
-		cmd.SubscriptionCost = p.Cost.TotalCost
+		cmd.SubscriptionCost = p.Cost.ActualCost
 	} else if p.Cost.ActualCost > 0 {
 		cmd.BalanceCost = p.Cost.ActualCost
 	}
@@ -7524,8 +7497,8 @@ func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps, resu
 	}
 
 	if p.IsSubscriptionBill {
-		if p.Cost.TotalCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
-			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.TotalCost)
+		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
+			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
 	} else if p.Cost.ActualCost > 0 && p.User != nil {
 		deps.billingCacheService.QueueDeductBalance(p.User.ID, p.Cost.ActualCost)
@@ -8313,16 +8286,15 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 读取响应体
-	maxReadBytes := resolveUpstreamResponseReadLimit(s.cfg)
-	respBody, err := readUpstreamResponseBodyLimited(resp.Body, maxReadBytes)
+	countTokensTooLarge := func(c *gin.Context) {
+		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response too large")
+	}
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, countTokensTooLarge)
 	_ = resp.Body.Close()
 	if err != nil {
-		if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-			s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response too large")
-			return err
+		if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+			s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 		}
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 		return err
 	}
 
@@ -8336,15 +8308,12 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 			retryResp, retryErr := s.httpUpstream.DoWithTLS(retryReq, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 			if retryErr == nil {
 				resp = retryResp
-				respBody, err = readUpstreamResponseBodyLimited(resp.Body, maxReadBytes)
+				respBody, err = ReadUpstreamResponseBody(resp.Body, s.cfg, c, countTokensTooLarge)
 				_ = resp.Body.Close()
 				if err != nil {
-					if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-						setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-						s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response too large")
-						return err
+					if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+						s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 					}
-					s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 					return err
 				}
 			}
@@ -8439,16 +8408,15 @@ func (s *GatewayService) forwardCountTokensAnthropicAPIKeyPassthrough(ctx contex
 		return fmt.Errorf("upstream request failed: %w", err)
 	}
 
-	maxReadBytes := resolveUpstreamResponseReadLimit(s.cfg)
-	respBody, err := readUpstreamResponseBodyLimited(resp.Body, maxReadBytes)
+	countTokensTooLarge := func(c *gin.Context) {
+		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response too large")
+	}
+	respBody, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, countTokensTooLarge)
 	_ = resp.Body.Close()
 	if err != nil {
-		if errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
-			setOpsUpstreamError(c, http.StatusBadGateway, "upstream response too large", "")
-			s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Upstream response too large")
-			return err
+		if !errors.Is(err, ErrUpstreamResponseBodyTooLarge) {
+			s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 		}
-		s.countTokensError(c, http.StatusBadGateway, "upstream_error", "Failed to read response")
 		return err
 	}
 
