@@ -335,10 +335,10 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 直接设置 token（用于 OAuth/SSO 回调），并加载当前用户信息。
    * 调用方可直接传入 refresh token / expires_in，避免在 localStorage 中中转明文敏感数据。
-   * 若未传入，会回退读取 localStorage 中可能已存在的 refresh_token / token_expires_at
-   * 以保持向后兼容（并在读取后立即清除，防止泄露）。
+   * 若未传入，会回退读取 sessionStorage 中可能已存在的 refresh_token，以及
+   * localStorage 中的 token_expires_at（并在读取后立即清除，防止泄露）。
    * @param newToken - 后端签发的 JWT access token
-   * @param refreshTokenParam - 可选的 refresh token（优先于 localStorage）
+   * @param refreshTokenParam - 可选的 refresh token（优先于 sessionStorage）
    * @param expiresInSeconds - 可选的 access token 剩余秒数（优先于 localStorage）
    */
   async function setToken(

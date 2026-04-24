@@ -1534,7 +1534,7 @@ func resolvedTokenVersion(user *User) int64 {
 
 	material := strings.ToLower(strings.TrimSpace(user.Email)) + "\n" + user.PasswordHash
 	mac := hmac.New(sha256.New, resolvedTokenVersionFingerprintSalt)
-	mac.Write([]byte(material))
+	_, _ = mac.Write([]byte(material))
 	sum := mac.Sum(nil)
 	fingerprint := int64(binary.BigEndian.Uint64(sum[:8]) & 0x7fffffffffffffff)
 	return user.TokenVersion ^ fingerprint

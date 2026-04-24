@@ -987,7 +987,7 @@ func hashSensitiveValueForLog(raw string) string {
 		return ""
 	}
 	mac := hmac.New(sha256.New, hashSensitiveValueForLogSalt)
-	mac.Write([]byte(value))
+	_, _ = mac.Write([]byte(value))
 	sum := mac.Sum(nil)
 	return hex.EncodeToString(sum[:8])
 }
