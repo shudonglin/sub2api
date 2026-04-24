@@ -428,6 +428,10 @@ func releaseOpsCaptureWriter(w *opsCaptureWriter) {
 	opsCaptureWriterPool.Put(w)
 }
 
+// Write is a generic pass-through; the payload is whatever the inner
+// handler wrote and is not inspected. XSS containment happens at the
+// headers layer (security_headers.go enforces X-Content-Type-Options:
+// nosniff and CSP globally), not at this transport wrapper.
 func (w *opsCaptureWriter) Write(b []byte) (int, error) {
 	if w.Status() >= 400 && w.limit > 0 && w.buf.Len() < w.limit {
 		remaining := w.limit - w.buf.Len()

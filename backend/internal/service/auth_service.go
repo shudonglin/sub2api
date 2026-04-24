@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -1513,6 +1514,16 @@ func hashToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// resolvedTokenVersionFingerprintSalt is a fixed HMAC key used to derive a
+// non-secret fingerprint from email + password-hash material. Using HMAC-SHA256
+// (rather than bare SHA256) keeps the property that an attacker who somehow
+// obtained a fingerprint cannot run dictionary attacks back to the inputs,
+// and closes CodeQL go/weak-sensitive-data-hashing on this site. The
+// fingerprint itself is not a secret — it's mixed into TokenVersion so a
+// password change invalidates outstanding JWTs even when the stored
+// TokenVersion column has not been incremented yet.
+var resolvedTokenVersionFingerprintSalt = []byte("sub2api/resolved-token-version/v1")
+
 func resolvedTokenVersion(user *User) int64 {
 	if user == nil {
 		return 0
@@ -1522,7 +1533,9 @@ func resolvedTokenVersion(user *User) int64 {
 	}
 
 	material := strings.ToLower(strings.TrimSpace(user.Email)) + "\n" + user.PasswordHash
-	sum := sha256.Sum256([]byte(material))
+	mac := hmac.New(sha256.New, resolvedTokenVersionFingerprintSalt)
+	mac.Write([]byte(material))
+	sum := mac.Sum(nil)
 	fingerprint := int64(binary.BigEndian.Uint64(sum[:8]) & 0x7fffffffffffffff)
 	return user.TokenVersion ^ fingerprint
 }

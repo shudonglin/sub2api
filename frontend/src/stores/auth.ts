@@ -103,7 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
   function checkAuth(): void {
     const savedToken = localStorage.getItem(AUTH_TOKEN_KEY)
     const savedUser = localStorage.getItem(AUTH_USER_KEY)
-    const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+    const savedRefreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY)
     const savedExpiresAt = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
     pendingAuthSession.value = getPersistedPendingAuthSession()
 
@@ -286,7 +286,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Store refresh token if present
     if (response.refresh_token) {
       refreshTokenValue.value = response.refresh_token
-      localStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token)
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token)
     }
 
     // Extract run_mode if present
@@ -365,10 +365,10 @@ export const useAuthStore = defineStore('auth', () => {
         : null
 
     if (!effectiveRefreshToken) {
-      const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+      const savedRefreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY)
       if (savedRefreshToken) {
         effectiveRefreshToken = savedRefreshToken
-        localStorage.removeItem(REFRESH_TOKEN_KEY)
+        sessionStorage.removeItem(REFRESH_TOKEN_KEY)
       }
     }
     if (effectiveExpiresAt === null) {
@@ -479,7 +479,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
 
     if (options?.preservePendingAuthSession) {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -973,12 +974,21 @@ func snapshotCodexCLIOnlyHeaders(header http.Header) map[string]string {
 	return result
 }
 
+// hashSensitiveValueForLogSalt is a fixed HMAC key used to derive a short,
+// non-reversible identifier from sensitive values (account names, request IDs)
+// before they go to logs. Using HMAC-SHA256 instead of bare SHA256 prevents
+// an attacker with a log dump from running rainbow-table lookups against the
+// 8-byte hex IDs, and closes CodeQL go/weak-sensitive-data-hashing.
+var hashSensitiveValueForLogSalt = []byte("sub2api/log-fingerprint/v1")
+
 func hashSensitiveValueForLog(raw string) string {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(value))
+	mac := hmac.New(sha256.New, hashSensitiveValueForLogSalt)
+	mac.Write([]byte(value))
+	sum := mac.Sum(nil)
 	return hex.EncodeToString(sum[:8])
 }
 

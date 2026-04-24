@@ -28,6 +28,12 @@ export function isTotp2FARequired(response: LoginResponse): response is TotpLogi
   return 'requires_2fa' in response && response.requires_2fa === true
 }
 
+// Refresh tokens live in sessionStorage rather than localStorage so they
+// do not persist past a browser session — short-lived access tokens stay
+// in localStorage for cross-tab session continuity, but the long-lived
+// refresh token is the higher-value secret and should not survive a
+// browser restart on a shared machine.
+
 /**
  * Store authentication token in localStorage
  */
@@ -36,10 +42,10 @@ export function setAuthToken(token: string): void {
 }
 
 /**
- * Store refresh token in localStorage
+ * Store refresh token in sessionStorage
  */
 export function setRefreshToken(token: string): void {
-  localStorage.setItem('refresh_token', token)
+  sessionStorage.setItem('refresh_token', token)
 }
 
 /**
@@ -59,10 +65,10 @@ export function getAuthToken(): string | null {
 }
 
 /**
- * Get refresh token from localStorage
+ * Get refresh token from sessionStorage
  */
 export function getRefreshToken(): string | null {
-  return localStorage.getItem('refresh_token')
+  return sessionStorage.getItem('refresh_token')
 }
 
 /**
@@ -74,11 +80,11 @@ export function getTokenExpiresAt(): number | null {
 }
 
 /**
- * Clear authentication token from localStorage
+ * Clear authentication token from local + session storage
  */
 export function clearAuthToken(): void {
   localStorage.removeItem('auth_token')
-  localStorage.removeItem('refresh_token')
+  sessionStorage.removeItem('refresh_token')
   localStorage.removeItem('auth_user')
   localStorage.removeItem('token_expires_at')
 }
