@@ -134,12 +134,12 @@ vite.config.js
 docs/*
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
+!docs/ADMIN_PAYMENT_INTEGRATION_API.md
 .serena/
 .codex/
 frontend/coverage/
 aicodex
 output/
-
 # Security: prevent committing runtime data with secrets
 deploy/data/
 .gstack/

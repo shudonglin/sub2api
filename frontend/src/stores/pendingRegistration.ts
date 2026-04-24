@@ -20,6 +20,14 @@ export interface PendingRegistrationData {
   turnstile_token?: string
   promo_code?: string
   invitation_code?: string
+  pending_auth_token?: string
+  pending_auth_token_field?: 'pending_auth_token' | 'pending_oauth_token'
+  pending_provider?: string
+  pending_redirect?: string
+  pending_adoption_decision?: {
+    adopt_display_name?: boolean
+    adopt_avatar?: boolean
+  } | null
 }
 
 export const usePendingRegistrationStore = defineStore('pendingRegistration', () => {
