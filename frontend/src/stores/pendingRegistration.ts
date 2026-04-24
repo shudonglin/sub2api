@@ -20,6 +20,7 @@ export interface PendingRegistrationData {
   turnstile_token?: string
   promo_code?: string
   invitation_code?: string
+  aff_code?: string
   pending_auth_token?: string
   pending_auth_token_field?: 'pending_auth_token' | 'pending_oauth_token'
   pending_provider?: string
