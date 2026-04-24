@@ -916,6 +916,8 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
+					"enable_metadata_userid_anonymization": false,
+					"enable_privacy_mode": true,
 					"enable_cch_signing": false,
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "",
