@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
+import { getStoredRefreshToken, setStoredRefreshToken } from '@/api/refreshTokenStore'
 import OidcCallbackView from '../OidcCallbackView.vue'
 
 const replace = vi.fn()
@@ -77,6 +78,7 @@ vi.mock('@/api/auth', async () => {
 
 describe('OidcCallbackView', () => {
   beforeEach(() => {
+    setStoredRefreshToken(null)
     replace.mockReset()
     showSuccess.mockReset()
     showError.mockReset()
@@ -119,7 +121,7 @@ describe('OidcCallbackView', () => {
 
     expect(exchangePendingOAuthCompletion).not.toHaveBeenCalled()
     expect(setToken).toHaveBeenCalledWith('legacy-access-token')
-    expect(sessionStorage.getItem('refresh_token')).toBe('legacy-refresh-token')
+    expect(getStoredRefreshToken()).toBe('legacy-refresh-token')
     expect(localStorage.getItem('token_expires_at')).not.toBeNull()
     expect(showSuccess).toHaveBeenCalledWith('auth.loginSuccess')
     expect(replace).toHaveBeenCalledWith('/legacy-dashboard')
