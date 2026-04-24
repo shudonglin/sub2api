@@ -366,7 +366,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			fields := []zap.Field{
 				zap.Int64("account_id", account.ID),
 				zap.Bool("fallback_error_response_written", wroteFallback),
-				zap.Error(err),
+				zap.String("error", logredact.SafeError(err)),
 			}
 			if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 				reqLog.Warn("openai.forward_failed", fields...)

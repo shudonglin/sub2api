@@ -70,6 +70,18 @@ func SafeLogValue(s string) string {
 	}, s)
 }
 
+// SafeError wraps err.Error() with SafeLogValue so error messages that
+// originated from user input (parsed body fields, header values, upstream
+// responses) cannot smuggle CR/LF and forge a synthetic log entry.
+// Callers should prefer this over zap.Error(err) at any sink CodeQL flags
+// for go/log-injection. Returns the empty string for a nil error.
+func SafeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return SafeLogValue(err.Error())
+}
+
 func RedactMap(input map[string]any, extraKeys ...string) map[string]any {
 	if input == nil {
 		return map[string]any{}
