@@ -103,7 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
   function checkAuth(): void {
     const savedToken = localStorage.getItem(AUTH_TOKEN_KEY)
     const savedUser = localStorage.getItem(AUTH_USER_KEY)
-    const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+    const savedRefreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY)
     const savedExpiresAt = localStorage.getItem(TOKEN_EXPIRES_AT_KEY)
     pendingAuthSession.value = getPersistedPendingAuthSession()
 
@@ -286,7 +286,7 @@ export const useAuthStore = defineStore('auth', () => {
     // Store refresh token if present
     if (response.refresh_token) {
       refreshTokenValue.value = response.refresh_token
-      localStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token)
+      sessionStorage.setItem(REFRESH_TOKEN_KEY, response.refresh_token)
     }
 
     // Extract run_mode if present
@@ -335,10 +335,10 @@ export const useAuthStore = defineStore('auth', () => {
   /**
    * 直接设置 token（用于 OAuth/SSO 回调），并加载当前用户信息。
    * 调用方可直接传入 refresh token / expires_in，避免在 localStorage 中中转明文敏感数据。
-   * 若未传入，会回退读取 localStorage 中可能已存在的 refresh_token / token_expires_at
-   * 以保持向后兼容（并在读取后立即清除，防止泄露）。
+   * 若未传入，会回退读取 sessionStorage 中可能已存在的 refresh_token，以及
+   * localStorage 中的 token_expires_at（并在读取后立即清除，防止泄露）。
    * @param newToken - 后端签发的 JWT access token
-   * @param refreshTokenParam - 可选的 refresh token（优先于 localStorage）
+   * @param refreshTokenParam - 可选的 refresh token（优先于 sessionStorage）
    * @param expiresInSeconds - 可选的 access token 剩余秒数（优先于 localStorage）
    */
   async function setToken(
@@ -365,10 +365,10 @@ export const useAuthStore = defineStore('auth', () => {
         : null
 
     if (!effectiveRefreshToken) {
-      const savedRefreshToken = localStorage.getItem(REFRESH_TOKEN_KEY)
+      const savedRefreshToken = sessionStorage.getItem(REFRESH_TOKEN_KEY)
       if (savedRefreshToken) {
         effectiveRefreshToken = savedRefreshToken
-        localStorage.removeItem(REFRESH_TOKEN_KEY)
+        sessionStorage.removeItem(REFRESH_TOKEN_KEY)
       }
     }
     if (effectiveExpiresAt === null) {
@@ -479,7 +479,7 @@ export const useAuthStore = defineStore('auth', () => {
     user.value = null
     localStorage.removeItem(AUTH_TOKEN_KEY)
     localStorage.removeItem(AUTH_USER_KEY)
-    localStorage.removeItem(REFRESH_TOKEN_KEY)
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(TOKEN_EXPIRES_AT_KEY)
 
     if (options?.preservePendingAuthSession) {

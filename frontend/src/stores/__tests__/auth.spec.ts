@@ -153,7 +153,7 @@ describe('useAuthStore', () => {
       expect(store.isAuthenticated).toBe(false)
       expect(localStorage.getItem('auth_token')).toBeNull()
       expect(localStorage.getItem('auth_user')).toBeNull()
-      expect(localStorage.getItem('refresh_token')).toBeNull()
+      expect(sessionStorage.getItem('refresh_token')).toBeNull()
       expect(localStorage.getItem('token_expires_at')).toBeNull()
     })
   })
@@ -201,7 +201,7 @@ describe('useAuthStore', () => {
       const futureTs = String(Date.now() + 3600_000)
       localStorage.setItem('auth_token', 'saved-token')
       localStorage.setItem('auth_user', JSON.stringify(fakeUser))
-      localStorage.setItem('refresh_token', 'saved-refresh')
+      sessionStorage.setItem('refresh_token', 'saved-refresh')
       localStorage.setItem('token_expires_at', futureTs)
 
       mockGetCurrentUser.mockResolvedValue({ data: fakeUser })

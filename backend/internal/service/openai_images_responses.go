@@ -690,9 +690,10 @@ func (s *OpenAIGatewayService) handleOpenAIImagesOAuthStreamingResponse(
 		}
 	}
 
-	if imageCount > 0 {
-		return usage, imageCount, firstTokenMs, nil
-	}
+	// imageCount is only assigned inside the response.completed case,
+	// which returns immediately, so any path that reaches here has
+	// imageCount == 0.
+
 	if len(pendingResults) > 0 {
 		eventName := streamPrefix + ".completed"
 		for _, img := range pendingResults {

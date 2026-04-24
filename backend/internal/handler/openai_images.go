@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -75,7 +76,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	}
 
 	reqLog = reqLog.With(
-		zap.String("model", parsed.Model),
+		zap.String("model", logredact.SafeLogValue(parsed.Model)),
 		zap.Bool("stream", parsed.Stream),
 		zap.Bool("multipart", parsed.Multipart),
 		zap.String("capability", string(parsed.RequiredCapability)),
@@ -142,7 +143,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 		if err != nil {
 			reqLog.Warn("openai.images.account_select_failed",
-				zap.Error(err),
+				zap.String("error", logredact.SafeError(err)),
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
@@ -239,7 +240,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 			fields := []zap.Field{
 				zap.Int64("account_id", account.ID),
 				zap.Bool("fallback_error_response_written", wroteFallback),
-				zap.Error(err),
+				zap.String("error", logredact.SafeError(err)),
 			}
 			if shouldLogOpenAIForwardFailureAsWarn(c, wroteFallback) {
 				reqLog.Warn("openai.images.forward_failed", fields...)
@@ -285,9 +286,9 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 					zap.Int64("user_id", subject.UserID),
 					zap.Int64("api_key_id", apiKey.ID),
 					zap.Any("group_id", apiKey.GroupID),
-					zap.String("model", parsed.Model),
+					zap.String("model", logredact.SafeLogValue(parsed.Model)),
 					zap.Int64("account_id", account.ID),
-				).Error("openai.images.record_usage_failed", zap.Error(err))
+				).Error("openai.images.record_usage_failed", zap.String("error", logredact.SafeError(err)))
 			}
 		})
 
