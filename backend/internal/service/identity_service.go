@@ -29,7 +29,7 @@ var (
 	diverseArchPool           = []string{"arm64", "x64"}
 	diverseRuntimeVersionPool = []string{"v22.11.0", "v22.15.0", "v23.5.0", "v23.11.0", "v24.4.0", "v24.13.0"}
 	diversePackageVersionPool = []string{"0.67.0", "0.68.0", "0.69.0", "0.70.0"}
-	diverseCLIVersionPool     = []string{"2.1.18", "2.1.19", "2.1.20", "2.1.21", "2.1.22"}
+	diverseCLIVersionPool     = []string{"2.1.18", "2.1.19", "2.1.20", "2.1.21", "2.1.22", "2.1.92"}
 )
 
 // generateDiverseFingerprint creates a deterministic fingerprint based on accountID.
