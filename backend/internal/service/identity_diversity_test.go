@@ -69,6 +69,7 @@ func TestGenerateDiverseFingerprint_ValidValues(t *testing.T) {
 		"claude-cli/2.1.20 (external, cli)": true,
 		"claude-cli/2.1.21 (external, cli)": true,
 		"claude-cli/2.1.22 (external, cli)": true,
+		"claude-cli/2.1.92 (external, cli)": true,
 	}
 
 	for i := int64(0); i < 500; i++ {
