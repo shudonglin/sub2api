@@ -628,11 +628,20 @@ sub2api/
 
 ---
 
+## Credits
+
+This is a downstream derivative of [**Wei-Shaw/sub2api**](https://github.com/Wei-Shaw/sub2api),
+the upstream project created and maintained by Wei Shaw and contributors. Full
+upstream commit history and authorship are preserved in this repository. All
+credit for the original work belongs to the upstream authors. See [NOTICE](NOTICE).
+
+---
+
 ## License
 
 This project is licensed under the [GNU Lesser General Public License v3.0](LICENSE) (or later).
 
-Copyright (c) 2026 Wesley Liddick
+Copyright (c) 2026 Wesley Liddick (upstream) and contributors.
 
 ---
 

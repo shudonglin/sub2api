@@ -1,0 +1,22 @@
+sub2api (downstream distribution)
+=================================
+
+This repository is a downstream derivative work based on the upstream
+project:
+
+    sub2api
+    https://github.com/Wei-Shaw/sub2api
+    Copyright (c) Wei Shaw and contributors
+    Licensed under the GNU Lesser General Public License v3.0 (or later)
+
+The original work was created and is maintained by the upstream authors.
+This distribution adds downstream customizations and is itself licensed
+under the GNU Lesser General Public License v3.0 (or later); see the
+LICENSE file.
+
+The complete upstream commit history and original authorship metadata are
+preserved in this repository's git history. All copyright and license
+notices from the upstream project are retained.
+
+Per LGPL-3.0, the corresponding source code for this distribution is this
+repository itself.
