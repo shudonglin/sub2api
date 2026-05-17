@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
 )
 
 var (
@@ -804,10 +804,26 @@ func (s *SchedulerSnapshotService) defaultBuckets(ctx context.Context) ([]Schedu
 		if group.Platform == "" {
 			continue
 		}
-		buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: group.Platform, Mode: SchedulerModeSingle})
-		buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: group.Platform, Mode: SchedulerModeForced})
-		if group.Platform == PlatformAnthropic || group.Platform == PlatformGemini {
-			buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: group.Platform, Mode: SchedulerModeMixed})
+		// Phase 6: seed buckets per DISTINCT account.platform so multi-platform groups
+		// (e.g. Group.Platform=openai with bound accounts of [openai, anthropic]) get
+		// buckets prewarmed for every platform their accounts can serve, not just the
+		// group's primary Platform. Single-platform groups (the dominant case) produce
+		// byte-identical seeding to the pre-Phase-6 behaviour.
+		groupPlatforms, perr := s.groupRepo.GetAccountPlatforms(ctx, group.ID)
+		if perr != nil || len(groupPlatforms) == 0 {
+			// Fallback: query failure or zero bound accounts → seed Group.Platform-only
+			// bucket so startup keeps working and groups aren't permanently cold.
+			groupPlatforms = []string{group.Platform}
+		}
+		for _, p := range groupPlatforms {
+			if p == "" {
+				continue
+			}
+			buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: p, Mode: SchedulerModeSingle})
+			buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: p, Mode: SchedulerModeForced})
+			if p == PlatformAnthropic || p == PlatformGemini {
+				buckets = append(buckets, SchedulerBucket{GroupID: group.ID, Platform: p, Mode: SchedulerModeMixed})
+			}
 		}
 	}
 	return dedupeBuckets(buckets), nil

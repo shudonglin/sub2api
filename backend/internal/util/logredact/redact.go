@@ -47,6 +47,41 @@ var (
 	extraTextPatternCache     sync.Map // map[string]*textRedactPatterns
 )
 
+// SafeLogValue strips CR/LF (and other control chars) from a user-controlled
+// string so it cannot forge log entries when written into a structured logger.
+// Callers should use this on any raw string that originated in a client-supplied
+// request field before logging it, even when using a structured encoder.
+//
+// The explicit ReplaceAll("\r","") / ReplaceAll("\n","") calls match the
+// sanitizer pattern recognised by CodeQL's go/log-injection taint model so
+// wrapped values are treated as sanitised at the sink. strings.Map then drops
+// the remaining control characters for defence-in-depth.
+func SafeLogValue(s string) string {
+	if s == "" {
+		return s
+	}
+	s = strings.ReplaceAll(s, "\r", "")
+	s = strings.ReplaceAll(s, "\n", "")
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// SafeError wraps err.Error() with SafeLogValue so error messages that
+// originated from user input (parsed body fields, header values, upstream
+// responses) cannot smuggle CR/LF and forge a synthetic log entry.
+// Callers should prefer this over zap.Error(err) at any sink CodeQL flags
+// for go/log-injection. Returns the empty string for a nil error.
+func SafeError(err error) string {
+	if err == nil {
+		return ""
+	}
+	return SafeLogValue(err.Error())
+}
+
 func RedactMap(input map[string]any, extraKeys ...string) map[string]any {
 	if input == nil {
 		return map[string]any{}

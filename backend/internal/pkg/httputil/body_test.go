@@ -131,6 +131,38 @@ func TestReadRequestBodyWithPrealloc_NilBody(t *testing.T) {
 	}
 }
 
+func TestReadRequestBodyWithPrealloc_RejectsDecompressionBomb(t *testing.T) {
+	enc, _ := zstd.NewWriter(nil)
+	bomb := bytes.Repeat([]byte{'A'}, maxDecompressedBodySize+1)
+	compressed := enc.EncodeAll(bomb, nil)
+	_ = enc.Close()
+
+	req := newRequestWithBody(t, compressed, "zstd")
+	_, err := ReadRequestBodyWithPrealloc(req)
+	if err == nil {
+		t.Fatal("expected error for decompression bomb, got nil")
+	}
+	if !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("error should mention size limit, got %v", err)
+	}
+}
+
+func TestReadRequestBodyWithPrealloc_AllowsExactlyMaxSize(t *testing.T) {
+	enc, _ := zstd.NewWriter(nil)
+	payload := bytes.Repeat([]byte{'B'}, maxDecompressedBodySize)
+	compressed := enc.EncodeAll(payload, nil)
+	_ = enc.Close()
+
+	req := newRequestWithBody(t, compressed, "zstd")
+	got, err := ReadRequestBodyWithPrealloc(req)
+	if err != nil {
+		t.Fatalf("unexpected error at exactly max size: %v", err)
+	}
+	if len(got) != maxDecompressedBodySize {
+		t.Fatalf("expected %d bytes, got %d", maxDecompressedBodySize, len(got))
+	}
+}
+
 func TestReadRequestBodyWithPrealloc_RespectsIdentityEncoding(t *testing.T) {
 	req := newRequestWithBody(t, []byte(samplePayload), "identity")
 	got, err := ReadRequestBodyWithPrealloc(req)

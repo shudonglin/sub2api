@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -10,11 +11,20 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/dgraph-io/ristretto"
+	"github.com/shudonglin/sub2api/internal/config"
 )
 
-const apiKeyAuthSnapshotVersion = 7 // v7: added UserGroupRPMOverride on user snapshot
+// apiKeyAuthCacheSalt is a fixed keyed-hash salt used to derive auth cache keys
+// from raw API keys. Using HMAC-SHA256 (rather than bare SHA256) prevents an
+// attacker with a cache dump from running pre-computed dictionary attacks to
+// recover raw API keys, and closes CodeQL go/weak-sensitive-data-hashing.
+var apiKeyAuthCacheSalt = []byte("sub2api/apikey-auth-cache/v1")
+
+// v7 added UserGroupRPMOverride on user snapshot (downstream of #44 multi-platform groups).
+// v8 added group image generation controls (upstream).
+// v9 = both features merged at sync.
+const apiKeyAuthSnapshotVersion = 9
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -105,8 +115,12 @@ func (s *APIKeyService) StartAuthCacheInvalidationSubscriber(ctx context.Context
 }
 
 func (s *APIKeyService) authCacheKey(key string) string {
-	sum := sha256.Sum256([]byte(key))
-	return hex.EncodeToString(sum[:])
+	mac := hmac.New(sha256.New, apiKeyAuthCacheSalt)
+	_, _ = mac.Write([]byte(key))
+	// "h1:" algorithm marker forces clean invalidation of any SHA256-format
+	// entries left in Redis by earlier deployments — they simply miss and
+	// get repopulated under the new key space.
+	return "h1:" + hex.EncodeToString(mac.Sum(nil))
 }
 
 func (s *APIKeyService) getAuthCacheEntry(ctx context.Context, cacheKey string) (*APIKeyAuthCacheEntry, bool) {
@@ -245,6 +259,21 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		// 查询失败或无 override 时留 nil，checkRPM 会回退到 DB 查询
 	}
 	if apiKey.Group != nil {
+		// Hydrate AccountPlatforms — DISTINCT account.platform set across accounts bound to this group.
+		// Used by router/handler/service code to make multi-platform decisions.
+		// On query failure, leave nil so readers fall back to [Group.Platform] via service.GroupAccountPlatforms.
+		var accountPlatforms []string
+		if apiKey.Group.ID > 0 && s.groupRepo != nil {
+			if platforms, err := s.groupRepo.GetAccountPlatforms(ctx, apiKey.Group.ID); err == nil {
+				if platforms == nil {
+					// Defensive: enforce non-nil empty slice contract for "queried, found 0".
+					platforms = []string{}
+				}
+				accountPlatforms = platforms
+			}
+			// On error: accountPlatforms stays nil; reader falls back to [Group.Platform] (safe legacy behavior).
+		}
+
 		snapshot.Group = &APIKeyAuthGroupSnapshot{
 			ID:                              apiKey.Group.ID,
 			Name:                            apiKey.Group.Name,
@@ -255,6 +284,9 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			DailyLimitUSD:                   apiKey.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  apiKey.Group.WeeklyLimitUSD,
 			MonthlyLimitUSD:                 apiKey.Group.MonthlyLimitUSD,
+			AllowImageGeneration:            apiKey.Group.AllowImageGeneration,
+			ImageRateIndependent:            apiKey.Group.ImageRateIndependent,
+			ImageRateMultiplier:             apiKey.Group.ImageRateMultiplier,
 			ImagePrice1K:                    apiKey.Group.ImagePrice1K,
 			ImagePrice2K:                    apiKey.Group.ImagePrice2K,
 			ImagePrice4K:                    apiKey.Group.ImagePrice4K,
@@ -269,6 +301,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			DefaultMappedModel:              apiKey.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     apiKey.Group.MessagesDispatchModelConfig,
 			RPMLimit:                        apiKey.Group.RPMLimit,
+			AccountPlatforms:                accountPlatforms,
 		}
 	}
 	return snapshot
@@ -321,6 +354,9 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			DailyLimitUSD:                   snapshot.Group.DailyLimitUSD,
 			WeeklyLimitUSD:                  snapshot.Group.WeeklyLimitUSD,
 			MonthlyLimitUSD:                 snapshot.Group.MonthlyLimitUSD,
+			AllowImageGeneration:            snapshot.Group.AllowImageGeneration,
+			ImageRateIndependent:            snapshot.Group.ImageRateIndependent,
+			ImageRateMultiplier:             snapshot.Group.ImageRateMultiplier,
 			ImagePrice1K:                    snapshot.Group.ImagePrice1K,
 			ImagePrice2K:                    snapshot.Group.ImagePrice2K,
 			ImagePrice4K:                    snapshot.Group.ImagePrice4K,
@@ -335,6 +371,10 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			DefaultMappedModel:              snapshot.Group.DefaultMappedModel,
 			MessagesDispatchModelConfig:     snapshot.Group.MessagesDispatchModelConfig,
 			RPMLimit:                        snapshot.Group.RPMLimit,
+			// Direct copy preserves nil-vs-empty-slice distinction across cache round-trip.
+			// nil = legacy snapshot (writer didn't populate); empty = "queried, 0 accounts".
+			// Readers use service.GroupAccountPlatforms helper for nil-tolerant access.
+			AccountPlatforms: snapshot.Group.AccountPlatforms,
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)

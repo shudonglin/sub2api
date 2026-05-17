@@ -1,6 +1,9 @@
 package service
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 const (
 	defaultOpenAIMessagesDispatchOpusMappedModel   = "gpt-5.4"
@@ -91,7 +94,17 @@ func (g *Group) ResolveMessagesDispatchModel(requestedModel string) string {
 }
 
 func sanitizeGroupMessagesDispatchFields(g *Group) {
-	if g == nil || g.Platform == PlatformOpenAI {
+	if g == nil {
+		return
+	}
+	// Derived-set check (design Change 8c): preserve dispatch config whenever
+	// the group has at least one OpenAI account in its derived
+	// AccountPlatforms set, regardless of g.Platform. Single-platform groups
+	// fall back to []string{g.Platform} via GroupAccountPlatforms helper, so
+	// existing openai-primary groups behave identically. Callers (admin
+	// CreateGroup/UpdateGroup) are responsible for hydrating
+	// g.AccountPlatforms before invoking this function.
+	if slices.Contains(GroupAccountPlatforms(g), PlatformOpenAI) {
 		return
 	}
 	g.AllowMessagesDispatch = false

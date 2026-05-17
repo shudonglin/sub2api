@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shudonglin/sub2api/internal/pkg/response"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 // ExportData exports proxy-only data for migration.

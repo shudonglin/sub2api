@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,16 +25,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
-	"github.com/Wei-Shaw/sub2api/internal/util/responseheaders"
-	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
 	"github.com/cespare/xxhash/v2"
 	"github.com/google/uuid"
 	gocache "github.com/patrickmn/go-cache"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/pkg/claude"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/pkg/usagestats"
+	"github.com/shudonglin/sub2api/internal/util/responseheaders"
+	"github.com/shudonglin/sub2api/internal/util/urlvalidator"
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 	"golang.org/x/sync/singleflight"
@@ -1160,7 +1161,7 @@ func normalizeClaudeOAuthRequestBody(body []byte, modelID string, opts claudeOAu
 	return out, modelID
 }
 
-func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint) string {
+func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account *Account, fp *Fingerprint, anonymize bool) string {
 	if parsed == nil || account == nil {
 		return ""
 	}
@@ -1173,9 +1174,10 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		userID = fp.ClientID
 	}
 	if userID == "" {
-		// Fall back to a random, well-formed client id so we can still satisfy
-		// Claude Code OAuth requirements when account metadata is incomplete.
 		userID = generateClientID()
+	}
+	if anonymize {
+		userID = generateClientIDFromSeed(fmt.Sprintf("metadata-device:%d", account.ID))
 	}
 
 	sessionHash := s.GenerateSessionHash(parsed)
@@ -1185,12 +1187,14 @@ func (s *GatewayService) buildOAuthMetadataUserID(parsed *ParsedRequest, account
 		sessionID = generateSessionUUID(seed)
 	}
 
-	// 根据指纹 UA 版本选择输出格式
 	var uaVersion string
 	if fp != nil {
 		uaVersion = ExtractCLIVersion(fp.UserAgent)
 	}
 	accountUUID := strings.TrimSpace(account.GetExtraString("account_uuid"))
+	if anonymize {
+		accountUUID = generateUUIDFromSeed(fmt.Sprintf("metadata-account:%d", account.ID))
+	}
 	return FormatMetadataUserID(userID, accountUUID, sessionID, uaVersion)
 }
 
@@ -1237,7 +1241,7 @@ func (s *GatewayService) applyClaudeCodeOAuthMimicryToBody(
 		if fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header); err == nil && fp != nil {
 			mimicMPT := false
 			if s.settingService != nil {
-				_, mimicMPT, _ = s.settingService.GetGatewayForwardingSettings(ctx)
+				_, mimicMPT, _, _, _ = s.settingService.GetGatewayForwardingSettings(ctx)
 			}
 			if !mimicMPT {
 				if uid := s.buildOAuthMetadataUserIDFromBody(ctx, account, fp, body); uid != "" {
@@ -1364,7 +1368,9 @@ func (s *GatewayService) SelectAccountForModelWithExclusions(ctx context.Context
 		}
 		groupID = resolvedGroupID
 		ctx = s.withGroupContext(ctx, group)
-		platform = group.Platform
+		// 3-tier 平台解析：ForcePlatform > requested_platform > group.Platform
+		// 单平台分组（requested_platform 未设置）回退到 group.Platform，保持字节级一致。
+		platform = ResolvePlatformFromContext(ctx, group)
 	} else {
 		// 无分组时只使用原生 anthropic 平台
 		platform = PlatformAnthropic
@@ -1548,8 +1554,9 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 	}
 
 	// 获取模型路由配置（仅 anthropic 平台）
+	// 派生集合检查：含任意 anthropic 账号的多平台分组也应启用模型路由。
 	var routingAccountIDs []int64
-	if group != nil && requestedModel != "" && group.Platform == PlatformAnthropic {
+	if group != nil && requestedModel != "" && slices.Contains(GroupAccountPlatforms(group), PlatformAnthropic) {
 		routingAccountIDs = group.GetRoutingAccountIDs(requestedModel)
 		if s.debugModelRoutingEnabled() {
 			logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] context group routing: group_id=%d model=%s enabled=%v rules=%d matched_ids=%v session=%s sticky_account=%d",
@@ -2121,6 +2128,22 @@ func (s *GatewayService) resolveGroupByID(ctx context.Context, groupID int64) (*
 	if err != nil {
 		return nil, fmt.Errorf("get group failed: %w", err)
 	}
+	// Hydrate the derived AccountPlatforms set when the group is loaded
+	// outside the auth-cache snapshot (design Change 8d-runtime). Runtime
+	// validators (e.g. gateway_handler fallback validator at :785) read the
+	// derived set via slices.Contains(GroupAccountPlatforms(g), platform);
+	// without hydration the helper falls back to []string{Platform}, which
+	// would silently reject multi-platform fallback groups whose primary
+	// platform differs from the runtime check target.
+	//
+	// Best-effort: on query failure, leave AccountPlatforms nil so the
+	// helper falls back to single-platform behavior — preserves legacy
+	// behavior under repo failure.
+	if group != nil && group.AccountPlatforms == nil {
+		if platforms, err := s.groupRepo.GetAccountPlatforms(ctx, groupID); err == nil {
+			group.AccountPlatforms = platforms
+		}
+	}
 	return group, nil
 }
 
@@ -2139,10 +2162,11 @@ func (s *GatewayService) routingAccountIDsForRequest(ctx context.Context, groupI
 		}
 		return nil
 	}
-	// Preserve existing behavior: model routing only applies to anthropic groups.
-	if group.Platform != PlatformAnthropic {
+	// Preserve existing behavior: model routing only applies to groups that include Anthropic accounts.
+	// 派生集合检查：单平台分组与原 group.Platform == PlatformAnthropic 行为一致；多平台分组若包含 anthropic 账号亦启用。
+	if !slices.Contains(GroupAccountPlatforms(group), PlatformAnthropic) {
 		if s.debugModelRoutingEnabled() {
-			logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] skip: non-anthropic group platform: group_id=%d group_platform=%s model=%s", group.ID, group.Platform, requestedModel)
+			logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] skip: group has no anthropic accounts: group_id=%d group_platform=%s model=%s", group.ID, group.Platform, requestedModel)
 		}
 		return nil
 	}
@@ -2205,20 +2229,27 @@ func (s *GatewayService) checkClaudeCodeRestriction(ctx context.Context, groupID
 	return group, resolvedID, nil
 }
 
+// resolvePlatform 3-tier 解析当前请求平台：
+//  1. ctxkey.ForcePlatform — antigravity / 路由级强制；hasForcePlatform=true 用于关闭混合调度
+//  2. ctxkey.RequestedPlatform — Phase 4 router 中间件按 URL 设置
+//  3. group.Platform — 单平台分组兜底（与历史行为字节级一致）
+//
+// 第二个返回值 hasForcePlatform 仅当 ForcePlatform 命中时为 true；requested_platform 命中时仍为 false，
+// 因为多平台分组下的 requested_platform 走的是混合调度路径，不应禁用 useMixed。
 func (s *GatewayService) resolvePlatform(ctx context.Context, groupID *int64, group *Group) (string, bool, error) {
 	forcePlatform, hasForcePlatform := ctx.Value(ctxkey.ForcePlatform).(string)
 	if hasForcePlatform && forcePlatform != "" {
 		return forcePlatform, true, nil
 	}
 	if group != nil {
-		return group.Platform, false, nil
+		return ResolvePlatformFromContext(ctx, group), false, nil
 	}
 	if groupID != nil {
 		group, err := s.resolveGroupByID(ctx, *groupID)
 		if err != nil {
 			return "", false, err
 		}
-		return group.Platform, false, nil
+		return ResolvePlatformFromContext(ctx, group), false, nil
 	}
 	return PlatformAnthropic, false, nil
 }
@@ -3954,7 +3985,17 @@ func injectClaudeCodePrompt(body []byte, system any) []byte {
 			items = [][]byte{claudeCodeBlock, nextBlock}
 		}
 	case []any:
-		items = make([][]byte, 0, len(v)+1)
+		// Guard allocation hint against pathological upstream payloads.
+		// Cap len(v) first and drop the trailing +1 so no arithmetic
+		// on a user-derived length can overflow. One extra element
+		// for claudeCodeBlock is a cosmetic hint; append will grow
+		// the slice if we underestimate by one.
+		const maxSystemBlocks = 1 << 14 // 16384
+		capHint := len(v)
+		if capHint < 0 || capHint > maxSystemBlocks {
+			capHint = maxSystemBlocks
+		}
+		items = make([][]byte, 0, capHint)
 		items = append(items, claudeCodeBlock)
 		prefixedNext := false
 		systemResult := gjson.GetBytes(body, "system")
@@ -4406,9 +4447,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 			fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, c.Request.Header)
 			if err == nil && fp != nil {
 				// metadata 透传开启时跳过 metadata 注入
-				_, mimicMPT, _ := s.settingService.GetGatewayForwardingSettings(ctx)
+				_, mimicMPT, mimicMUA, _, _ := s.settingService.GetGatewayForwardingSettings(ctx)
 				if !mimicMPT {
-					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp); metadataUserID != "" {
+					if metadataUserID := s.buildOAuthMetadataUserID(parsed, account, fp, mimicMUA); metadataUserID != "" {
 						normalizeOpts.injectMetadata = true
 						normalizeOpts.metadataUserID = metadataUserID
 					}
@@ -5964,9 +6005,9 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 
 	// OAuth账号：应用统一指纹和metadata重写（受设置开关控制）
 	var fingerprint *Fingerprint
-	enableFP, enableMPT, enableCCH := true, false, false
+	enableFP, enableMPT, enableMUA, enablePM, enableCCH := true, false, false, false, false
 	if s.settingService != nil {
-		enableFP, enableMPT, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+		enableFP, enableMPT, enableMUA, enablePM, enableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	if account.IsOAuth() && s.identityService != nil {
 		// 1. 获取或创建指纹（包含随机生成的ClientID）
@@ -5985,7 +6026,7 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 			if !enableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent, enableMUA, enablePM); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
@@ -8174,9 +8215,16 @@ func detachedBillingContext(ctx context.Context) (context.Context, context.Cance
 }
 
 func detachStreamUpstreamContext(ctx context.Context, stream bool) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.Background(), func() {}
+	}
 	if !stream {
 		return ctx, func() {}
 	}
+	return context.WithoutCancel(ctx), func() {}
+}
+
+func detachUpstreamContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx == nil {
 		return context.Background(), func() {}
 	}
@@ -8360,6 +8408,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		groupDefault := apiKey.Group.RateMultiplier
 		multiplier = s.getUserGroupRateMultiplier(ctx, user.ID, *apiKey.GroupID, groupDefault)
 	}
+	imageMultiplier := resolveImageRateMultiplier(apiKey, multiplier)
 
 	// 确定计费模型
 	billingModel := forwardResultBillingModel(result.Model, result.UpstreamModel)
@@ -8377,7 +8426,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	}
 
 	// 计算费用
-	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, opts)
+	cost := s.calculateRecordUsageCost(ctx, result, apiKey, billingModel, multiplier, imageMultiplier, opts)
 
 	// 判断计费方式：订阅模式 vs 余额模式
 	isSubscriptionBilling := subscription != nil && apiKey.Group != nil && apiKey.Group.IsSubscriptionType()
@@ -8389,7 +8438,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 	// 创建使用日志
 	accountRateMultiplier := account.BillingRateMultiplier()
 	usageLog := s.buildRecordUsageLog(ctx, input, result, apiKey, user, account, subscription,
-		requestedModel, multiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
+		requestedModel, multiplier, imageMultiplier, accountRateMultiplier, billingType, cacheTTLOverridden, cost, opts)
 
 	// 计算账号统计定价费用（使用最终上游模型匹配自定义规则）
 	if apiKey.GroupID != nil {
@@ -8443,11 +8492,12 @@ func (s *GatewayService) calculateRecordUsageCost(
 	apiKey *APIKey,
 	billingModel string,
 	multiplier float64,
+	imageMultiplier float64,
 	opts *recordUsageOpts,
 ) *CostBreakdown {
 	// 图片生成计费
 	if result.ImageCount > 0 {
-		return s.calculateImageCost(ctx, result, apiKey, billingModel, multiplier)
+		return s.calculateImageCost(ctx, result, apiKey, billingModel, imageMultiplier)
 	}
 
 	// Token 计费
@@ -8488,7 +8538,8 @@ func (s *GatewayService) calculateImageCost(
 			Model:          billingModel,
 			GroupID:        &gid,
 			Tokens:         tokens,
-			RequestCount:   1,
+			RequestCount:   result.ImageCount,
+			SizeTier:       result.ImageSize,
 			RateMultiplier: multiplier,
 			Resolver:       s.resolver,
 			Resolved:       resolved,
@@ -8573,6 +8624,7 @@ func (s *GatewayService) buildRecordUsageLog(
 	subscription *UserSubscription,
 	requestedModel string,
 	multiplier float64,
+	imageMultiplier float64,
 	accountRateMultiplier float64,
 	billingType int8,
 	cacheTTLOverridden bool,
@@ -8616,6 +8668,9 @@ func (s *GatewayService) buildRecordUsageLog(
 		GroupID:               apiKey.GroupID,
 		SubscriptionID:        optionalSubscriptionID(subscription),
 		CreatedAt:             time.Now(),
+	}
+	if result.ImageCount > 0 {
+		usageLog.RateMultiplier = imageMultiplier
 	}
 	if cost != nil {
 		usageLog.InputCost = cost.InputCost
@@ -9153,9 +9208,9 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 
 	// OAuth 账号：应用统一指纹和重写 userID（受设置开关控制）
 	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-	ctEnableFP, ctEnableMPT, ctEnableCCH := true, false, false
+	ctEnableFP, ctEnableMPT, ctEnableMUA, ctEnablePM, ctEnableCCH := true, false, false, false, false
 	if s.settingService != nil {
-		ctEnableFP, ctEnableMPT, ctEnableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+		ctEnableFP, ctEnableMPT, ctEnableMUA, ctEnablePM, ctEnableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
 	if account.IsOAuth() && s.identityService != nil {
@@ -9165,7 +9220,7 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 			if !ctEnableMPT {
 				accountUUID := account.GetExtraString("account_uuid")
 				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent, ctEnableMUA, ctEnablePM); err == nil && len(newBody) > 0 {
 						body = newBody
 					}
 				}
@@ -9454,6 +9509,13 @@ const debugGatewayBodyDefaultFilename = "gateway_debug.log"
 func (s *GatewayService) initDebugGatewayBodyFile(path string) {
 	if parseDebugEnvBool(path) {
 		path = debugGatewayBodyDefaultFilename
+	}
+
+	// Reject path traversal sequences
+	path = filepath.Clean(path)
+	if strings.Contains(path, "..") {
+		slog.Error("rejected debug log path with traversal sequence", "path", path)
+		return
 	}
 
 	// 如果 path 指向一个已存在的目录，自动追加默认文件名

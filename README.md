@@ -253,7 +253,7 @@ If you prefer manual setup:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/shudonglin/sub2api.git
 cd sub2api/deploy
 
 # 2. Copy environment configuration
@@ -392,7 +392,7 @@ Build and run from source code for development or customization.
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/shudonglin/sub2api.git
 cd sub2api
 
 # 2. Install pnpm (if not already installed)

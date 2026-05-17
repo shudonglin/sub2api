@@ -7,24 +7,26 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	pkgerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/domain"
+	"github.com/shudonglin/sub2api/internal/pkg/antigravity"
+	"github.com/shudonglin/sub2api/internal/pkg/claude"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	pkgerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	pkghttputil "github.com/shudonglin/sub2api/internal/pkg/httputil"
+	"github.com/shudonglin/sub2api/internal/pkg/ip"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/pkg/openai"
+	"github.com/shudonglin/sub2api/internal/pkg/timezone"
+	middleware2 "github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/util/logredact"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -268,13 +270,10 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		zap.String("metadata_user_id_raw", parsedReq.MetadataUserID),
 	)
 
-	// 获取平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则使用分组平台
-	platform := ""
-	if forcePlatform, ok := middleware2.GetForcePlatformFromContext(c); ok {
-		platform = forcePlatform
-	} else if apiKey.Group != nil {
-		platform = apiKey.Group.Platform
-	}
+	// 获取平台：3-tier 解析（ForcePlatform > requested_platform > Group.Platform）
+	// ForcePlatform 来自 /antigravity 等路由；requested_platform 由 Phase 4 router 中间件按 URL 设置；
+	// 单平台分组保持与原 Group.Platform 兜底一致。
+	platform := middleware2.ResolvePlatform(c, apiKey)
 	sessionKey := sessionHash
 	if platform == service.PlatformGemini && sessionHash != "" {
 		sessionKey = "gemini:" + sessionHash
@@ -781,12 +780,20 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 							_ = h.antigravityGatewayService.WriteMappedClaudeError(c, account, promptTooLongErr.StatusCode, promptTooLongErr.RequestID, promptTooLongErr.Body)
 							return
 						}
-						if fallbackGroup.Platform != service.PlatformAnthropic ||
+						// Runtime fallback validator (design Change 8d-runtime):
+						// accept any group whose derived AccountPlatforms set
+						// includes anthropic, not just primary-platform anthropic
+						// groups. ResolveGroupByID hydrates AccountPlatforms when
+						// the group is not in the auth-cache snapshot. Helper
+						// falls back to []string{Platform} when AccountPlatforms
+						// is nil — preserves single-platform behavior.
+						if !slices.Contains(service.GroupAccountPlatforms(fallbackGroup), service.PlatformAnthropic) ||
 							fallbackGroup.SubscriptionType == service.SubscriptionTypeSubscription ||
 							fallbackGroup.FallbackGroupIDOnInvalidRequest != nil {
 							reqLog.Warn("gateway.fallback_group_invalid",
 								zap.Int64("fallback_group_id", fallbackGroup.ID),
 								zap.String("fallback_platform", fallbackGroup.Platform),
+								zap.Strings("fallback_account_platforms", service.GroupAccountPlatforms(fallbackGroup)),
 								zap.String("fallback_subscription_type", fallbackGroup.SubscriptionType),
 							)
 							_ = h.antigravityGatewayService.WriteMappedClaudeError(c, account, promptTooLongErr.StatusCode, promptTooLongErr.RequestID, promptTooLongErr.Body)
@@ -834,16 +841,16 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				wroteFallback := h.ensureForwardErrorResponse(c, streamStarted)
 				forwardFailedFields := []zap.Field{
 					zap.Int64("account_id", account.ID),
-					zap.String("account_name", account.Name),
-					zap.String("account_platform", account.Platform),
+					zap.String("account_name", logredact.SafeLogValue(account.Name)),
+					zap.String("account_platform", logredact.SafeLogValue(account.Platform)),
 					zap.Bool("fallback_error_response_written", wroteFallback),
 					zap.Error(err),
 				}
 				if account.Proxy != nil {
 					forwardFailedFields = append(forwardFailedFields,
 						zap.Int64("proxy_id", account.Proxy.ID),
-						zap.String("proxy_name", account.Proxy.Name),
-						zap.String("proxy_host", account.Proxy.Host),
+						zap.String("proxy_name", logredact.SafeLogValue(account.Proxy.Name)),
+						zap.String("proxy_host", logredact.SafeLogValue(account.Proxy.Host)),
 						zap.Int("proxy_port", account.Proxy.Port),
 					)
 				} else if account.ProxyID != nil {
@@ -928,15 +935,11 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
 	var groupID *int64
-	var platform string
-
 	if apiKey != nil && apiKey.Group != nil {
 		groupID = &apiKey.Group.ID
-		platform = apiKey.Group.Platform
 	}
-	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
-		platform = forcedPlatform
-	}
+	// 3-tier 平台解析：ForcePlatform > requested_platform > Group.Platform
+	platform := middleware2.ResolvePlatform(c, apiKey)
 
 	// Get available models from account configurations (without platform filter)
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")

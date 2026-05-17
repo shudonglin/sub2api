@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/paymentproviderinstance"
+	"github.com/shudonglin/sub2api/internal/payment"
 )
 
 // GetAvailableMethodLimits collects all payment types from enabled provider

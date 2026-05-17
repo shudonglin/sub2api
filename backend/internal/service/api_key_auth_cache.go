@@ -63,6 +63,9 @@ type APIKeyAuthGroupSnapshot struct {
 	DailyLimitUSD                   *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                  *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD                 *float64 `json:"monthly_limit_usd,omitempty"`
+	AllowImageGeneration            bool     `json:"allow_image_generation"`
+	ImageRateIndependent            bool     `json:"image_rate_independent"`
+	ImageRateMultiplier             float64  `json:"image_rate_multiplier"`
 	ImagePrice1K                    *float64 `json:"image_price_1k,omitempty"`
 	ImagePrice2K                    *float64 `json:"image_price_2k,omitempty"`
 	ImagePrice4K                    *float64 `json:"image_price_4k,omitempty"`
@@ -86,6 +89,12 @@ type APIKeyAuthGroupSnapshot struct {
 
 	// RPMLimit 分组级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 级联判断。
 	RPMLimit int `json:"rpm_limit"`
+
+	// AccountPlatforms — derived set of platforms across accounts currently bound to this group.
+	// Populated by snapshotFromAPIKey via groupRepo.GetAccountPlatforms.
+	// nil = legacy snapshot from before this field shipped (readers fall back to [Platform]).
+	// []string{} (non-nil) = queried, group has 0 accounts (treated as valid empty derived set).
+	AccountPlatforms []string `json:"account_platforms,omitempty"`
 }
 
 // APIKeyAuthCacheEntry 缓存条目，支持负缓存

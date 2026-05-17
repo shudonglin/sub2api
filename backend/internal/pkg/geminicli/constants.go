@@ -1,7 +1,11 @@
 // Package geminicli provides helpers for interacting with Gemini CLI tools.
 package geminicli
 
-import "time"
+import (
+	"log"
+	"os"
+	"time"
+)
 
 const (
 	AIStudioBaseURL  = "https://generativelanguage.googleapis.com"
@@ -39,7 +43,7 @@ const (
 	// They enable the "login without creating your own OAuth client" experience, but Google may
 	// restrict which scopes are allowed for this client.
 	GeminiCLIOAuthClientID     = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com"
-	GeminiCLIOAuthClientSecret = "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"
+	GeminiCLIOAuthClientSecret = ""
 
 	// GeminiCLIOAuthClientSecretEnv is the environment variable name for the built-in client secret.
 	GeminiCLIOAuthClientSecretEnv = "GEMINI_CLI_OAUTH_CLIENT_SECRET"
@@ -49,3 +53,9 @@ const (
 	// GeminiCLIUserAgent mimics Gemini CLI to maximize compatibility with internal endpoints.
 	GeminiCLIUserAgent = "GeminiCLI/0.1.5 (Windows; AMD64)"
 )
+
+func init() {
+	if os.Getenv(GeminiCLIOAuthClientSecretEnv) == "" {
+		log.Printf("[WARNING] %s not set — Gemini CLI OAuth will not work until configured", GeminiCLIOAuthClientSecretEnv)
+	}
+}

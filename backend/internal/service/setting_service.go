@@ -16,9 +16,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/imroc/req/v3"
+	"github.com/shudonglin/sub2api/internal/config"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -84,6 +84,8 @@ const backendModeDBTimeout = 5 * time.Second
 type cachedGatewayForwardingSettings struct {
 	fingerprintUnification       bool
 	metadataPassthrough          bool
+	metadataUserIDAnonymization  bool
+	privacyMode                  bool
 	cchSigning                   bool
 	anthropicCacheTTL1hInjection bool
 	expiresAt                    int64 // unix nano
@@ -1245,6 +1247,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Gateway forwarding behavior
 	updates[SettingKeyEnableFingerprintUnification] = strconv.FormatBool(settings.EnableFingerprintUnification)
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
+	updates[SettingKeyEnableMetadataUserIDAnonymization] = strconv.FormatBool(settings.EnableMetadataUserIDAnonymization)
+	updates[SettingKeyEnablePrivacyMode] = strconv.FormatBool(settings.EnablePrivacyMode)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
 	updates[SettingKeyEnableAnthropicCacheTTL1hInjection] = strconv.FormatBool(settings.EnableAnthropicCacheTTL1hInjection)
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
@@ -1309,6 +1313,8 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 		fingerprintUnification:       settings.EnableFingerprintUnification,
 		metadataPassthrough:          settings.EnableMetadataPassthrough,
+		metadataUserIDAnonymization:  settings.EnableMetadataUserIDAnonymization,
+		privacyMode:                  settings.EnablePrivacyMode,
 		cchSigning:                   settings.EnableCCHSigning,
 		anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
 		expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
@@ -1419,15 +1425,22 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 }
 
 type gatewayForwardingSettingsResult struct {
-	fp, mp, cch, cacheTTL1h bool
+	fp, mp, mua, pm, cch, cacheTTL1h bool
 }
 
 func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
+			fp, mua := cached.fingerprintUnification, cached.metadataUserIDAnonymization
+			pm := cached.privacyMode
+			if pm {
+				fp, mua = true, true
+			}
 			return gatewayForwardingSettingsResult{
-				fp:         cached.fingerprintUnification,
+				fp:         fp,
 				mp:         cached.metadataPassthrough,
+				mua:        mua,
+				pm:         pm,
 				cch:        cached.cchSigning,
 				cacheTTL1h: cached.anthropicCacheTTL1hInjection,
 			}
@@ -1436,9 +1449,16 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 	val, _, _ := gatewayForwardingSF.Do("gateway_forwarding", func() (any, error) {
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
+				fp, mua := cached.fingerprintUnification, cached.metadataUserIDAnonymization
+				pm := cached.privacyMode
+				if pm {
+					fp, mua = true, true
+				}
 				return gatewayForwardingSettingsResult{
-					fp:         cached.fingerprintUnification,
+					fp:         fp,
 					mp:         cached.metadataPassthrough,
+					mua:        mua,
+					pm:         pm,
 					cch:        cached.cchSigning,
 					cacheTTL1h: cached.anthropicCacheTTL1hInjection,
 				}, nil
@@ -1449,6 +1469,8 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 		values, err := s.settingRepo.GetMultiple(dbCtx, []string{
 			SettingKeyEnableFingerprintUnification,
 			SettingKeyEnableMetadataPassthrough,
+			SettingKeyEnableMetadataUserIDAnonymization,
+			SettingKeyEnablePrivacyMode,
 			SettingKeyEnableCCHSigning,
 			SettingKeyEnableAnthropicCacheTTL1hInjection,
 		})
@@ -1457,40 +1479,52 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 			gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 				fingerprintUnification:       true,
 				metadataPassthrough:          false,
+				metadataUserIDAnonymization:  false,
+				privacyMode:                  true, // fail-safe: default privacy on
 				cchSigning:                   false,
 				anthropicCacheTTL1hInjection: false,
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gatewayForwardingSettingsResult{fp: true}, nil
+			return gatewayForwardingSettingsResult{fp: true, mua: true, pm: true}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 			fp = v == "true"
 		}
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
+		mua := values[SettingKeyEnableMetadataUserIDAnonymization] == "true"
+		pm := true
+		if v, ok := values[SettingKeyEnablePrivacyMode]; ok && v != "" {
+			pm = v == "true"
+		}
 		cch := values[SettingKeyEnableCCHSigning] == "true"
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:       fp,
 			metadataPassthrough:          mp,
+			metadataUserIDAnonymization:  mua,
+			privacyMode:                  pm,
 			cchSigning:                   cch,
 			anthropicCacheTTL1hInjection: cacheTTL1h,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gatewayForwardingSettingsResult{fp: fp, mp: mp, cch: cch, cacheTTL1h: cacheTTL1h}, nil
+		if pm {
+			fp, mua = true, true
+		}
+		return gatewayForwardingSettingsResult{fp: fp, mp: mp, mua: mua, pm: pm, cch: cch, cacheTTL1h: cacheTTL1h}, nil
 	})
 	if r, ok := val.(gatewayForwardingSettingsResult); ok {
 		return r
 	}
-	return gatewayForwardingSettingsResult{fp: true}
+	return gatewayForwardingSettingsResult{fp: true, mua: true, pm: true}
 }
 
 // GetGatewayForwardingSettings returns cached gateway forwarding settings.
 // Uses in-process atomic.Value cache with 60s TTL, zero-lock hot path.
-// Returns (fingerprintUnification, metadataPassthrough, cchSigning).
-func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, cchSigning bool) {
+// Returns (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode, cchSigning).
+func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fingerprintUnification, metadataPassthrough, metadataUserIDAnonymization, privacyMode, cchSigning bool) {
 	result := s.getGatewayForwardingSettingsCached(ctx)
-	return result.fp, result.mp, result.cch
+	return result.fp, result.mp, result.mua, result.pm, result.cch
 }
 
 // IsAnthropicCacheTTL1hInjectionEnabled 检查是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl。
@@ -2249,13 +2283,20 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 分组隔离
 	result.AllowUngroupedKeyScheduling = settings[SettingKeyAllowUngroupedKeyScheduling] == "true"
 
-	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, cch_signing=false)
+	// Gateway forwarding behavior (defaults: fingerprint=true, metadata_passthrough=false, metadata_userid_anonymization=false, cch_signing=false)
 	if v, ok := settings[SettingKeyEnableFingerprintUnification]; ok && v != "" {
 		result.EnableFingerprintUnification = v == "true"
 	} else {
 		result.EnableFingerprintUnification = true // default: enabled (current behavior)
 	}
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
+	result.EnableMetadataUserIDAnonymization = settings[SettingKeyEnableMetadataUserIDAnonymization] == "true"
+	// privacy_mode defaults to true: DB value absent → enabled
+	if v, ok := settings[SettingKeyEnablePrivacyMode]; ok && v != "" {
+		result.EnablePrivacyMode = v == "true"
+	} else {
+		result.EnablePrivacyMode = true
+	}
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
 	result.EnableAnthropicCacheTTL1hInjection = settings[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 
@@ -2776,6 +2817,55 @@ func (s *SettingService) SetOverloadCooldownSettings(ctx context.Context, settin
 	}
 
 	return s.settingRepo.Set(ctx, SettingKeyOverloadCooldownSettings, string(data))
+}
+
+// GetRateLimit429CooldownSettings 获取429默认回避配置
+func (s *SettingService) GetRateLimit429CooldownSettings(ctx context.Context) (*RateLimit429CooldownSettings, error) {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRateLimit429CooldownSettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return DefaultRateLimit429CooldownSettings(), nil
+		}
+		return nil, fmt.Errorf("get 429 cooldown settings: %w", err)
+	}
+	if value == "" {
+		return DefaultRateLimit429CooldownSettings(), nil
+	}
+
+	var settings RateLimit429CooldownSettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return DefaultRateLimit429CooldownSettings(), nil
+	}
+
+	if settings.CooldownSeconds < 1 {
+		settings.CooldownSeconds = 1
+	}
+	if settings.CooldownSeconds > 7200 {
+		settings.CooldownSeconds = 7200
+	}
+
+	return &settings, nil
+}
+
+// SetRateLimit429CooldownSettings 设置429默认回避配置
+func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, settings *RateLimit429CooldownSettings) error {
+	if settings == nil {
+		return fmt.Errorf("settings cannot be nil")
+	}
+
+	if settings.CooldownSeconds < 1 || settings.CooldownSeconds > 7200 {
+		if settings.Enabled {
+			return fmt.Errorf("cooldown_seconds must be between 1-7200")
+		}
+		settings.CooldownSeconds = 5
+	}
+
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal 429 cooldown settings: %w", err)
+	}
+
+	return s.settingRepo.Set(ctx, SettingKeyRateLimit429CooldownSettings, string(data))
 }
 
 // GetOIDCConnectOAuthConfig 返回用于登录的“最终生效” OIDC 配置。

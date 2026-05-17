@@ -5,42 +5,42 @@ package runtime
 import (
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/ent/account"
-	"github.com/Wei-Shaw/sub2api/ent/accountgroup"
-	"github.com/Wei-Shaw/sub2api/ent/announcement"
-	"github.com/Wei-Shaw/sub2api/ent/announcementread"
-	"github.com/Wei-Shaw/sub2api/ent/apikey"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitordailyrollup"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitorrequesttemplate"
-	"github.com/Wei-Shaw/sub2api/ent/errorpassthroughrule"
-	"github.com/Wei-Shaw/sub2api/ent/group"
-	"github.com/Wei-Shaw/sub2api/ent/idempotencyrecord"
-	"github.com/Wei-Shaw/sub2api/ent/identityadoptiondecision"
-	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/ent/pendingauthsession"
-	"github.com/Wei-Shaw/sub2api/ent/promocode"
-	"github.com/Wei-Shaw/sub2api/ent/promocodeusage"
-	"github.com/Wei-Shaw/sub2api/ent/proxy"
-	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
-	"github.com/Wei-Shaw/sub2api/ent/schema"
-	"github.com/Wei-Shaw/sub2api/ent/securitysecret"
-	"github.com/Wei-Shaw/sub2api/ent/setting"
-	"github.com/Wei-Shaw/sub2api/ent/subscriptionplan"
-	"github.com/Wei-Shaw/sub2api/ent/tlsfingerprintprofile"
-	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
-	"github.com/Wei-Shaw/sub2api/ent/usagelog"
-	"github.com/Wei-Shaw/sub2api/ent/user"
-	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
-	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
-	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
-	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/shudonglin/sub2api/ent/account"
+	"github.com/shudonglin/sub2api/ent/accountgroup"
+	"github.com/shudonglin/sub2api/ent/announcement"
+	"github.com/shudonglin/sub2api/ent/announcementread"
+	"github.com/shudonglin/sub2api/ent/apikey"
+	"github.com/shudonglin/sub2api/ent/authidentity"
+	"github.com/shudonglin/sub2api/ent/authidentitychannel"
+	"github.com/shudonglin/sub2api/ent/channelmonitor"
+	"github.com/shudonglin/sub2api/ent/channelmonitordailyrollup"
+	"github.com/shudonglin/sub2api/ent/channelmonitorhistory"
+	"github.com/shudonglin/sub2api/ent/channelmonitorrequesttemplate"
+	"github.com/shudonglin/sub2api/ent/errorpassthroughrule"
+	"github.com/shudonglin/sub2api/ent/group"
+	"github.com/shudonglin/sub2api/ent/idempotencyrecord"
+	"github.com/shudonglin/sub2api/ent/identityadoptiondecision"
+	"github.com/shudonglin/sub2api/ent/paymentauditlog"
+	"github.com/shudonglin/sub2api/ent/paymentorder"
+	"github.com/shudonglin/sub2api/ent/paymentproviderinstance"
+	"github.com/shudonglin/sub2api/ent/pendingauthsession"
+	"github.com/shudonglin/sub2api/ent/promocode"
+	"github.com/shudonglin/sub2api/ent/promocodeusage"
+	"github.com/shudonglin/sub2api/ent/proxy"
+	"github.com/shudonglin/sub2api/ent/redeemcode"
+	"github.com/shudonglin/sub2api/ent/schema"
+	"github.com/shudonglin/sub2api/ent/securitysecret"
+	"github.com/shudonglin/sub2api/ent/setting"
+	"github.com/shudonglin/sub2api/ent/subscriptionplan"
+	"github.com/shudonglin/sub2api/ent/tlsfingerprintprofile"
+	"github.com/shudonglin/sub2api/ent/usagecleanuptask"
+	"github.com/shudonglin/sub2api/ent/usagelog"
+	"github.com/shudonglin/sub2api/ent/user"
+	"github.com/shudonglin/sub2api/ent/userallowedgroup"
+	"github.com/shudonglin/sub2api/ent/userattributedefinition"
+	"github.com/shudonglin/sub2api/ent/userattributevalue"
+	"github.com/shudonglin/sub2api/ent/usersubscription"
+	"github.com/shudonglin/sub2api/internal/domain"
 )
 
 // The init function reads all schema descriptors with runtime code
@@ -803,50 +803,62 @@ func init() {
 	groupDescDefaultValidityDays := groupFields[10].Descriptor()
 	// group.DefaultDefaultValidityDays holds the default value on creation for the default_validity_days field.
 	group.DefaultDefaultValidityDays = groupDescDefaultValidityDays.Default.(int)
+	// groupDescAllowImageGeneration is the schema descriptor for allow_image_generation field.
+	groupDescAllowImageGeneration := groupFields[11].Descriptor()
+	// group.DefaultAllowImageGeneration holds the default value on creation for the allow_image_generation field.
+	group.DefaultAllowImageGeneration = groupDescAllowImageGeneration.Default.(bool)
+	// groupDescImageRateIndependent is the schema descriptor for image_rate_independent field.
+	groupDescImageRateIndependent := groupFields[12].Descriptor()
+	// group.DefaultImageRateIndependent holds the default value on creation for the image_rate_independent field.
+	group.DefaultImageRateIndependent = groupDescImageRateIndependent.Default.(bool)
+	// groupDescImageRateMultiplier is the schema descriptor for image_rate_multiplier field.
+	groupDescImageRateMultiplier := groupFields[13].Descriptor()
+	// group.DefaultImageRateMultiplier holds the default value on creation for the image_rate_multiplier field.
+	group.DefaultImageRateMultiplier = groupDescImageRateMultiplier.Default.(float64)
 	// groupDescClaudeCodeOnly is the schema descriptor for claude_code_only field.
-	groupDescClaudeCodeOnly := groupFields[14].Descriptor()
+	groupDescClaudeCodeOnly := groupFields[17].Descriptor()
 	// group.DefaultClaudeCodeOnly holds the default value on creation for the claude_code_only field.
 	group.DefaultClaudeCodeOnly = groupDescClaudeCodeOnly.Default.(bool)
 	// groupDescModelRoutingEnabled is the schema descriptor for model_routing_enabled field.
-	groupDescModelRoutingEnabled := groupFields[18].Descriptor()
+	groupDescModelRoutingEnabled := groupFields[21].Descriptor()
 	// group.DefaultModelRoutingEnabled holds the default value on creation for the model_routing_enabled field.
 	group.DefaultModelRoutingEnabled = groupDescModelRoutingEnabled.Default.(bool)
 	// groupDescMcpXMLInject is the schema descriptor for mcp_xml_inject field.
-	groupDescMcpXMLInject := groupFields[19].Descriptor()
+	groupDescMcpXMLInject := groupFields[22].Descriptor()
 	// group.DefaultMcpXMLInject holds the default value on creation for the mcp_xml_inject field.
 	group.DefaultMcpXMLInject = groupDescMcpXMLInject.Default.(bool)
 	// groupDescSupportedModelScopes is the schema descriptor for supported_model_scopes field.
-	groupDescSupportedModelScopes := groupFields[20].Descriptor()
+	groupDescSupportedModelScopes := groupFields[23].Descriptor()
 	// group.DefaultSupportedModelScopes holds the default value on creation for the supported_model_scopes field.
 	group.DefaultSupportedModelScopes = groupDescSupportedModelScopes.Default.([]string)
 	// groupDescSortOrder is the schema descriptor for sort_order field.
-	groupDescSortOrder := groupFields[21].Descriptor()
+	groupDescSortOrder := groupFields[24].Descriptor()
 	// group.DefaultSortOrder holds the default value on creation for the sort_order field.
 	group.DefaultSortOrder = groupDescSortOrder.Default.(int)
 	// groupDescAllowMessagesDispatch is the schema descriptor for allow_messages_dispatch field.
-	groupDescAllowMessagesDispatch := groupFields[22].Descriptor()
+	groupDescAllowMessagesDispatch := groupFields[25].Descriptor()
 	// group.DefaultAllowMessagesDispatch holds the default value on creation for the allow_messages_dispatch field.
 	group.DefaultAllowMessagesDispatch = groupDescAllowMessagesDispatch.Default.(bool)
 	// groupDescRequireOauthOnly is the schema descriptor for require_oauth_only field.
-	groupDescRequireOauthOnly := groupFields[23].Descriptor()
+	groupDescRequireOauthOnly := groupFields[26].Descriptor()
 	// group.DefaultRequireOauthOnly holds the default value on creation for the require_oauth_only field.
 	group.DefaultRequireOauthOnly = groupDescRequireOauthOnly.Default.(bool)
 	// groupDescRequirePrivacySet is the schema descriptor for require_privacy_set field.
-	groupDescRequirePrivacySet := groupFields[24].Descriptor()
+	groupDescRequirePrivacySet := groupFields[27].Descriptor()
 	// group.DefaultRequirePrivacySet holds the default value on creation for the require_privacy_set field.
 	group.DefaultRequirePrivacySet = groupDescRequirePrivacySet.Default.(bool)
 	// groupDescDefaultMappedModel is the schema descriptor for default_mapped_model field.
-	groupDescDefaultMappedModel := groupFields[25].Descriptor()
+	groupDescDefaultMappedModel := groupFields[28].Descriptor()
 	// group.DefaultDefaultMappedModel holds the default value on creation for the default_mapped_model field.
 	group.DefaultDefaultMappedModel = groupDescDefaultMappedModel.Default.(string)
 	// group.DefaultMappedModelValidator is a validator for the "default_mapped_model" field. It is called by the builders before save.
 	group.DefaultMappedModelValidator = groupDescDefaultMappedModel.Validators[0].(func(string) error)
 	// groupDescMessagesDispatchModelConfig is the schema descriptor for messages_dispatch_model_config field.
-	groupDescMessagesDispatchModelConfig := groupFields[26].Descriptor()
+	groupDescMessagesDispatchModelConfig := groupFields[29].Descriptor()
 	// group.DefaultMessagesDispatchModelConfig holds the default value on creation for the messages_dispatch_model_config field.
 	group.DefaultMessagesDispatchModelConfig = groupDescMessagesDispatchModelConfig.Default.(domain.OpenAIMessagesDispatchModelConfig)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[27].Descriptor()
+	groupDescRpmLimit := groupFields[30].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()

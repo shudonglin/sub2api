@@ -8,12 +8,12 @@ import (
 	"strconv"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
-	"github.com/Wei-Shaw/sub2api/ent/paymentproviderinstance"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/paymentorder"
+	"github.com/shudonglin/sub2api/ent/paymentproviderinstance"
+	"github.com/shudonglin/sub2api/internal/payment"
+	"github.com/shudonglin/sub2api/internal/payment/provider"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
 )
 
 // validateProviderConfig runs the provider's constructor to surface config-level
@@ -176,6 +176,7 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 
 var validProviderKeys = map[string]bool{
 	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true,
+	payment.TypeAirwallex: true,
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {

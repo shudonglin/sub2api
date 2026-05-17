@@ -152,7 +152,7 @@ import { useI18n } from 'vue-i18n'
 import { AuthLayout } from '@/components/layout'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
-import { useAuthStore, useAppStore } from '@/stores'
+import { useAuthStore, useAppStore, usePendingRegistrationStore } from '@/stores'
 import {
   persistOAuthTokenContext,
   getPublicSettings,
@@ -180,6 +180,7 @@ const { t, locale } = useI18n()
 const router = useRouter()
 const authStore = useAuthStore()
 const appStore = useAppStore()
+const pendingRegistrationStore = usePendingRegistrationStore()
 
 // ==================== State ====================
 
@@ -228,7 +229,7 @@ const hasRegisterData = ref<boolean>(false)
 // Public settings
 const turnstileEnabled = ref<boolean>(false)
 const turnstileSiteKey = ref<string>('')
-const siteName = ref<string>('Sub2API')
+const siteName = ref<string>('KuaiAPI')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
 
 // Turnstile for resend
@@ -256,31 +257,27 @@ watch(validationToastMessage, (value, previousValue) => {
 onMounted(async () => {
   const activePendingSession = authStore.pendingAuthSession as PendingAuthSessionSummary | null
 
-  // Load registration data from sessionStorage
-  const registerDataStr = sessionStorage.getItem('register_data')
-  if (registerDataStr) {
-    try {
-      const registerData = JSON.parse(registerDataStr)
-      email.value = registerData.email || ''
-      password.value = registerData.password || ''
-      initialTurnstileToken.value = registerData.turnstile_token || ''
-      promoCode.value = registerData.promo_code || ''
-      invitationCode.value = registerData.invitation_code || ''
-      affCode.value = registerData.aff_code || loadAffiliateReferralCode()
-      pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
-      pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
-      pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
-      pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
-      pendingAdoptionDecision.value = registerData.pending_adoption_decision
-        ? {
-            adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
-            adoptAvatar: registerData.pending_adoption_decision.adopt_avatar === true
-          }
-        : null
-      hasRegisterData.value = !!(email.value && password.value)
-    } catch {
-      hasRegisterData.value = false
-    }
+  // Load registration data from the in-memory Pinia store (never persisted
+  // to disk; see usePendingRegistrationStore for rationale).
+  const registerData = pendingRegistrationStore.get()
+  if (registerData) {
+    email.value = registerData.email || ''
+    password.value = registerData.password || ''
+    initialTurnstileToken.value = registerData.turnstile_token || ''
+    promoCode.value = registerData.promo_code || ''
+    invitationCode.value = registerData.invitation_code || ''
+    affCode.value = registerData.aff_code || loadAffiliateReferralCode()
+    pendingAuthToken.value = registerData.pending_auth_token || activePendingSession?.token || ''
+    pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
+    pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
+    pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
+    pendingAdoptionDecision.value = registerData.pending_adoption_decision
+      ? {
+          adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
+          adoptAvatar: registerData.pending_adoption_decision.adopt_avatar === true
+        }
+      : null
+    hasRegisterData.value = !!(email.value && password.value)
   } else if (activePendingSession) {
     pendingAuthToken.value = activePendingSession.token
     pendingAuthTokenField.value = activePendingSession.token_field
@@ -293,7 +290,7 @@ onMounted(async () => {
     const settings = await getPublicSettings()
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
-    siteName.value = settings.site_name || 'Sub2API'
+    siteName.value = settings.site_name || 'KuaiAPI'
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )
@@ -537,8 +534,8 @@ async function handleVerify(): Promise<void> {
       })
     }
 
-    // Clear session data
-    sessionStorage.removeItem('register_data')
+    // Clear pending registration data
+    pendingRegistrationStore.clear()
     clearAllAffiliateReferralCodes()
 
     // Show success toast
@@ -558,8 +555,8 @@ async function handleVerify(): Promise<void> {
 }
 
 function handleBack(): void {
-  // Clear session data
-  sessionStorage.removeItem('register_data')
+  // Clear pending registration data
+  pendingRegistrationStore.clear()
 
   // Go back to registration
   router.push('/register')

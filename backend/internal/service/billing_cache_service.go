@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/config"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
 	"golang.org/x/sync/singleflight"
 )
 

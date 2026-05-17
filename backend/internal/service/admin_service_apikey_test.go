@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -228,6 +228,9 @@ func (s *groupRepoStubForGroupUpdate) ExistsByName(context.Context, string) (boo
 }
 func (s *groupRepoStubForGroupUpdate) GetAccountCount(context.Context, int64) (int64, int64, error) {
 	panic("unexpected")
+}
+func (s *groupRepoStubForGroupUpdate) GetAccountPlatforms(context.Context, int64) ([]string, error) {
+	return []string{}, nil
 }
 func (s *groupRepoStubForGroupUpdate) DeleteAccountGroupsByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected")

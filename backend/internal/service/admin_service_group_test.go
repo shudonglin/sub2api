@@ -6,7 +6,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -107,6 +107,16 @@ func (s *groupRepoStubForAdmin) ExistsByName(_ context.Context, _ string) (bool,
 
 func (s *groupRepoStubForAdmin) GetAccountCount(_ context.Context, _ int64) (int64, int64, error) {
 	panic("unexpected GetAccountCount call")
+}
+
+// GetAccountPlatforms is invoked by UpdateGroup as part of the derived-set
+// hydration step (design Change 8a). The default stub returns nil so existing
+// single-platform tests fall back to []string{Platform} via the
+// GroupAccountPlatforms helper — preserving legacy behavior. Tests that need
+// a non-default derived set should embed this stub via
+// groupRepoStubWithAccountPlatforms instead.
+func (s *groupRepoStubForAdmin) GetAccountPlatforms(_ context.Context, _ int64) ([]string, error) {
+	return nil, nil
 }
 
 func (s *groupRepoStubForAdmin) DeleteAccountGroupsByGroupID(_ context.Context, _ int64) (int64, error) {
@@ -266,6 +276,50 @@ func TestAdminService_UpdateGroup_PartialImagePricing(t *testing.T) {
 	require.Nil(t, repo.updated.ImagePrice4K)
 }
 
+func TestAdminService_UpdateGroup_PreservesImageGenerationControlsWhenOmitted(t *testing.T) {
+	imageMultiplier := 0.5
+	existingGroup := &Group{
+		ID:                   1,
+		Name:                 "existing-group",
+		Platform:             PlatformOpenAI,
+		Status:               StatusActive,
+		AllowImageGeneration: true,
+		ImageRateIndependent: true,
+		ImageRateMultiplier:  imageMultiplier,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Description: "updated",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.True(t, repo.updated.AllowImageGeneration)
+	require.True(t, repo.updated.ImageRateIndependent)
+	require.InDelta(t, 0.5, repo.updated.ImageRateMultiplier, 1e-12)
+}
+
+func TestAdminService_UpdateGroup_RejectsNegativeImageRateMultiplier(t *testing.T) {
+	existingGroup := &Group{
+		ID:                  1,
+		Name:                "existing-group",
+		Platform:            PlatformOpenAI,
+		Status:              StatusActive,
+		ImageRateMultiplier: 1,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existingGroup}
+	svc := &adminServiceImpl{groupRepo: repo}
+	negative := -0.1
+
+	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		ImageRateMultiplier: &negative,
+	})
+	require.Error(t, err)
+	require.Nil(t, repo.updated)
+}
+
 func TestAdminService_UpdateGroup_InvalidatesAuthCacheOnRPMLimitChange(t *testing.T) {
 	existingGroup := &Group{
 		ID:       1,
@@ -372,6 +426,62 @@ func TestAdminService_CreateGroup_ClearsMessagesDispatchFieldsForNonOpenAIPlatfo
 	require.False(t, repo.created.AllowMessagesDispatch)
 	require.Empty(t, repo.created.DefaultMappedModel)
 	require.Equal(t, OpenAIMessagesDispatchModelConfig{}, repo.created.MessagesDispatchModelConfig)
+}
+
+// groupRepoStubWithAccountPlatforms embeds groupRepoStubForAdmin and overrides
+// GetAccountPlatforms to return a configurable set. Used to verify hydration
+// of the derived AccountPlatforms set in admin write paths.
+type groupRepoStubWithAccountPlatforms struct {
+	groupRepoStubForAdmin
+	accountPlatforms     []string
+	getAccountPlatformsN int
+}
+
+func (s *groupRepoStubWithAccountPlatforms) GetAccountPlatforms(_ context.Context, _ int64) ([]string, error) {
+	s.getAccountPlatformsN++
+	return s.accountPlatforms, nil
+}
+
+// TestAdminService_UpdateGroup_HydratesAccountPlatformsBeforeSanitize
+// verifies the hydration step from design Change 8a: UpdateGroup must call
+// groupRepo.GetAccountPlatforms after loading the group and before invoking
+// sanitizeGroupMessagesDispatchFields, so the derived-set gate sees the live
+// set (not stale/nil). With this in place, an anthropic-primary group that
+// has attached OpenAI accounts preserves its messages_dispatch config on
+// every save.
+func TestAdminService_UpdateGroup_HydratesAccountPlatformsBeforeSanitize(t *testing.T) {
+	existingGroup := &Group{
+		ID:                    1,
+		Name:                  "anthropic-primary-with-openai",
+		Platform:              PlatformAnthropic,
+		Status:                StatusActive,
+		AllowMessagesDispatch: true,
+		DefaultMappedModel:    "gpt-5.4",
+		MessagesDispatchModelConfig: OpenAIMessagesDispatchModelConfig{
+			SonnetMappedModel: "gpt-5.3-codex",
+		},
+	}
+	repo := &groupRepoStubWithAccountPlatforms{
+		groupRepoStubForAdmin: groupRepoStubForAdmin{getByID: existingGroup},
+		accountPlatforms:      []string{PlatformAnthropic, PlatformOpenAI},
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	// No-op write: still triggers full sanitize path.
+	group, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{
+		Description: "edit",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	// Hydration was performed.
+	require.GreaterOrEqual(t, repo.getAccountPlatformsN, 1, "GetAccountPlatforms must be invoked before sanitize")
+	// Dispatch config preserved because hydrated set contains OpenAI.
+	require.True(t, repo.updated.AllowMessagesDispatch, "dispatch flag preserved when group has openai accounts")
+	require.Equal(t, "gpt-5.4", repo.updated.DefaultMappedModel)
+	require.Equal(t, OpenAIMessagesDispatchModelConfig{
+		SonnetMappedModel: "gpt-5.3-codex",
+	}, repo.updated.MessagesDispatchModelConfig)
 }
 
 func TestAdminService_UpdateGroup_ClearsMessagesDispatchFieldsWhenPlatformChangesAwayFromOpenAI(t *testing.T) {
@@ -543,6 +653,12 @@ func (s *groupRepoStubForFallbackCycle) GetAccountCount(_ context.Context, _ int
 	panic("unexpected GetAccountCount call")
 }
 
+// GetAccountPlatforms returns nil so admin paths that hydrate the derived
+// set fall back to []string{Platform} via service.GroupAccountPlatforms.
+func (s *groupRepoStubForFallbackCycle) GetAccountPlatforms(_ context.Context, _ int64) ([]string, error) {
+	return nil, nil
+}
+
 func (s *groupRepoStubForFallbackCycle) DeleteAccountGroupsByGroupID(_ context.Context, _ int64) (int64, error) {
 	panic("unexpected DeleteAccountGroupsByGroupID call")
 }
@@ -560,9 +676,10 @@ func (s *groupRepoStubForFallbackCycle) UpdateSortOrders(_ context.Context, _ []
 }
 
 type groupRepoStubForInvalidRequestFallback struct {
-	groups  map[int64]*Group
-	created *Group
-	updated *Group
+	groups           map[int64]*Group
+	created          *Group
+	updated          *Group
+	accountPlatforms map[int64][]string // optional per-group derived set; nil/missing -> nil result (fallback to Platform)
 }
 
 func (s *groupRepoStubForInvalidRequestFallback) Create(_ context.Context, g *Group) error {
@@ -616,6 +733,18 @@ func (s *groupRepoStubForInvalidRequestFallback) ExistsByName(_ context.Context,
 
 func (s *groupRepoStubForInvalidRequestFallback) GetAccountCount(_ context.Context, _ int64) (int64, int64, error) {
 	panic("unexpected GetAccountCount call")
+}
+
+// GetAccountPlatforms returns the per-group derived set when configured. When
+// no entry is present, returns nil so admin paths fall back to
+// []string{Platform} via service.GroupAccountPlatforms.
+func (s *groupRepoStubForInvalidRequestFallback) GetAccountPlatforms(_ context.Context, id int64) ([]string, error) {
+	if s.accountPlatforms != nil {
+		if platforms, ok := s.accountPlatforms[id]; ok {
+			return platforms, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *groupRepoStubForInvalidRequestFallback) DeleteAccountGroupsByGroupID(_ context.Context, _ int64) (int64, error) {
@@ -685,12 +814,12 @@ func TestAdminService_CreateGroup_InvalidRequestFallbackRejectsFallbackGroup(t *
 		{
 			name:        "openai_target",
 			fallback:    &Group{ID: 10, Platform: PlatformOpenAI, SubscriptionType: SubscriptionTypeStandard},
-			wantMessage: "fallback group must be anthropic platform",
+			wantMessage: "fallback group must include anthropic accounts",
 		},
 		{
 			name:        "antigravity_target",
 			fallback:    &Group{ID: 10, Platform: PlatformAntigravity, SubscriptionType: SubscriptionTypeStandard},
-			wantMessage: "fallback group must be anthropic platform",
+			wantMessage: "fallback group must include anthropic accounts",
 		},
 		{
 			name:        "subscription_group",
@@ -946,4 +1075,158 @@ func TestAdminService_UpdateGroup_InvalidRequestFallbackAllowsAntigravity(t *tes
 	require.NotNil(t, group)
 	require.NotNil(t, repo.updated)
 	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
+}
+
+// TestValidateFallbackGroupOnInvalidRequest_MultiPlatformCaller verifies the
+// caller-side precondition fix from design Change 8d: a multi-platform group
+// with primary Platform=openai but AccountPlatforms containing anthropic
+// passes the precondition check (was: rejected because Platform != anthropic).
+func TestValidateFallbackGroupOnInvalidRequest_MultiPlatformCaller(t *testing.T) {
+	callerID := int64(1)
+	fallbackID := int64(10)
+	caller := &Group{
+		ID:               callerID,
+		Name:             "caller-mixed",
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeStandard,
+		Status:           StatusActive,
+	}
+	fallback := &Group{
+		ID:               fallbackID,
+		Platform:         PlatformAnthropic,
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	repo := &groupRepoStubForInvalidRequestFallback{
+		groups: map[int64]*Group{
+			callerID:   caller,
+			fallbackID: fallback,
+		},
+		accountPlatforms: map[int64][]string{
+			// Caller has both openai + anthropic accounts; precondition must pass.
+			callerID: {PlatformOpenAI, PlatformAnthropic},
+			// Fallback is single-platform anthropic (default fallback to Platform).
+		},
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), callerID, &UpdateGroupInput{
+		FallbackGroupIDOnInvalidRequest: &fallbackID,
+	})
+	require.NoError(t, err, "multi-platform caller with anthropic accounts must pass precondition")
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.NotNil(t, repo.updated.FallbackGroupIDOnInvalidRequest)
+	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
+}
+
+// TestValidateFallbackGroupOnInvalidRequest_MultiPlatformFallback verifies the
+// fallback-target check fix from design Change 8d: a fallback group with
+// primary Platform=openai but AccountPlatforms containing anthropic passes
+// validation (was: rejected because fallback.Platform != anthropic).
+func TestValidateFallbackGroupOnInvalidRequest_MultiPlatformFallback(t *testing.T) {
+	callerID := int64(1)
+	fallbackID := int64(10)
+	caller := &Group{
+		ID:               callerID,
+		Name:             "caller",
+		Platform:         PlatformAnthropic,
+		SubscriptionType: SubscriptionTypeStandard,
+		Status:           StatusActive,
+	}
+	fallback := &Group{
+		ID:               fallbackID,
+		Platform:         PlatformOpenAI, // multi-platform group with primary openai
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	repo := &groupRepoStubForInvalidRequestFallback{
+		groups: map[int64]*Group{
+			callerID:   caller,
+			fallbackID: fallback,
+		},
+		accountPlatforms: map[int64][]string{
+			// Fallback has both openai + anthropic accounts; must pass.
+			fallbackID: {PlatformOpenAI, PlatformAnthropic},
+		},
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.UpdateGroup(context.Background(), callerID, &UpdateGroupInput{
+		FallbackGroupIDOnInvalidRequest: &fallbackID,
+	})
+	require.NoError(t, err, "multi-platform fallback with anthropic accounts must pass")
+	require.NotNil(t, group)
+	require.NotNil(t, repo.updated)
+	require.NotNil(t, repo.updated.FallbackGroupIDOnInvalidRequest)
+	require.Equal(t, fallbackID, *repo.updated.FallbackGroupIDOnInvalidRequest)
+}
+
+// TestValidateFallbackGroupOnInvalidRequest_RejectsCallerWithoutAnthropicOrAntigravity
+// regression: a single-platform openai caller (no anthropic accounts) must
+// still be rejected by the precondition.
+func TestValidateFallbackGroupOnInvalidRequest_RejectsCallerWithoutAnthropicOrAntigravity(t *testing.T) {
+	callerID := int64(1)
+	fallbackID := int64(10)
+	caller := &Group{
+		ID:               callerID,
+		Name:             "caller-openai-only",
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeStandard,
+		Status:           StatusActive,
+	}
+	fallback := &Group{
+		ID:               fallbackID,
+		Platform:         PlatformAnthropic,
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	repo := &groupRepoStubForInvalidRequestFallback{
+		groups: map[int64]*Group{
+			callerID:   caller,
+			fallbackID: fallback,
+		},
+		// no accountPlatforms entries: caller falls back to [openai], fails check.
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	_, err := svc.UpdateGroup(context.Background(), callerID, &UpdateGroupInput{
+		FallbackGroupIDOnInvalidRequest: &fallbackID,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "invalid request fallback only supported for anthropic or antigravity groups")
+}
+
+// TestValidateFallbackGroupOnInvalidRequest_RejectsFallbackWithoutAnthropic
+// regression: a fallback group whose derived set has no anthropic accounts is
+// still rejected.
+func TestValidateFallbackGroupOnInvalidRequest_RejectsFallbackWithoutAnthropic(t *testing.T) {
+	callerID := int64(1)
+	fallbackID := int64(10)
+	caller := &Group{
+		ID:               callerID,
+		Name:             "caller",
+		Platform:         PlatformAnthropic,
+		SubscriptionType: SubscriptionTypeStandard,
+		Status:           StatusActive,
+	}
+	fallback := &Group{
+		ID:               fallbackID,
+		Platform:         PlatformOpenAI,
+		SubscriptionType: SubscriptionTypeStandard,
+	}
+	repo := &groupRepoStubForInvalidRequestFallback{
+		groups: map[int64]*Group{
+			callerID:   caller,
+			fallbackID: fallback,
+		},
+		accountPlatforms: map[int64][]string{
+			// Fallback has only openai accounts, no anthropic.
+			fallbackID: {PlatformOpenAI},
+		},
+	}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	_, err := svc.UpdateGroup(context.Background(), callerID, &UpdateGroupInput{
+		FallbackGroupIDOnInvalidRequest: &fallbackID,
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fallback group must")
 }

@@ -182,8 +182,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'Sub2API 安装向导',
-    description: '配置您的 Sub2API 实例',
+    title: 'KuaiAPI 安装向导',
+    description: '配置您的 KuaiAPI 实例',
     database: {
       title: '数据库配置',
       description: '连接到您的 PostgreSQL 数据库',
@@ -347,6 +347,10 @@ export default {
     usage: '使用记录',
     redeem: '兑换',
     affiliate: '邀请返利',
+    affiliateManagement: '邀请返利',
+    affiliateInviteRecords: '邀请记录',
+    affiliateRebateRecords: '返利记录',
+    affiliateTransferRecords: '提取记录',
     profile: '个人资料',
     users: '用户管理',
     groups: '分组管理',
@@ -844,6 +848,8 @@ export default {
     perMillionTokens: '/ 1M Token',
     unitPrice: '单次价格',
     imageUnitPrice: '单张价格',
+    imageTotalPrice: '图片总价',
+    imageCount: '图片张数',
     cacheRead: '读取',
     cacheWrite: '写入',
     serviceTier: '服务档位',
@@ -1050,6 +1056,7 @@ export default {
     recentActivity: '最近活动',
     historyWillAppear: '您的兑换历史将显示在这里',
     balanceAddedRedeem: '余额充值（兑换）',
+    balanceAddedAffiliate: '余额充值（返利转入）',
     balanceAddedAdmin: '余额充值（管理员）',
     balanceDeductedAdmin: '余额扣除（管理员）',
     concurrencyAddedRedeem: '并发增加（兑换）',
@@ -1266,6 +1273,11 @@ export default {
   errors: {
     somethingWentWrong: '出错了',
     pageNotFound: '页面未找到',
+    pageNotFoundMessage: '您访问的页面不存在或已被移除。',
+    goBack: '返回',
+    goToDashboard: '前往控制台',
+    needHelp: '需要帮助？',
+    contactSupport: '联系客服',
     unauthorized: '未授权',
     forbidden: '禁止访问',
     serverError: '服务器错误',
@@ -1309,6 +1321,7 @@ export default {
       totalAccounts: '账号总数',
       activeAccounts: '活跃账号',
       todayRequests: '今日请求',
+      newUsersToday: '今日新增用户',
       totalRequests: '总请求数',
       todayCost: '今日消费',
       totalCost: '总消费',
@@ -1323,6 +1336,10 @@ export default {
       performance: '性能指标',
       avgResponse: '平均响应',
       averageTime: '平均时间',
+      active: '活跃',
+      ok: '正常',
+      err: '错误',
+      create: '创建',
       timeRange: '时间范围',
       granularity: '粒度',
       day: '按天',
@@ -1332,6 +1349,7 @@ export default {
       metricTokens: '按 Token',
       metricActualCost: '按实际消费',
       tokenUsageTrend: 'Token 使用趋势',
+      userUsageTrend: '用户使用趋势（前 12 名）',
       noDataAvailable: '暂无数据',
       model: '模型',
       group: '分组',
@@ -1656,6 +1674,49 @@ export default {
       }
     },
 
+    affiliates: {
+      invitesDescription: '查看全站邀请关系和被邀请用户累计返利',
+      rebatesDescription: '查看每一笔产生返利的充值订单',
+      transfersDescription: '查看返利额度转入账户余额的提取流水',
+      errors: {
+        loadFailed: '加载邀请返利记录失败'
+      },
+      records: {
+        search: '搜索',
+        searchPlaceholder: '邮箱、用户名、用户 ID、订单号',
+        startAt: '开始日期',
+        endAt: '结束日期',
+        inviter: '邀请人',
+        invitee: '被邀请人',
+        user: '用户',
+        affCode: '邀请码',
+        order: '订单',
+        totalRebate: '累计返利',
+        orderAmount: '充值金额',
+        payAmount: '支付金额',
+        rebateAmount: '返利金额',
+        paymentType: '支付方式',
+        orderStatus: '订单状态',
+        transferAmount: '提取金额',
+        balanceAfter: '提取后余额',
+        availableQuotaAfter: '提取后可提',
+        frozenQuotaAfter: '提取后冻结',
+        historyQuotaAfter: '提取后历史返利',
+        invitedAt: '邀请时间',
+        rebatedAt: '返利时间',
+        transferredAt: '提取时间'
+      },
+      overview: {
+        title: '用户返利概览',
+        affCode: '邀请码',
+        rebateRate: '返利比例',
+        invitedCount: '邀请人数',
+        rebatedInviteeCount: '已产生返利人数',
+        availableQuota: '可提余额',
+        historyQuota: '历史返利'
+      }
+    },
+
     // Users Management
     users: {
       title: '用户管理',
@@ -1844,6 +1905,7 @@ export default {
       noBalanceHistory: '暂无变动记录',
       allTypes: '全部类型',
       typeBalance: '余额（兑换码）',
+      typeAffiliateBalance: '余额（返利转入）',
       typeAdminBalance: '余额（管理员调整）',
       typeConcurrency: '并发（兑换码）',
       typeAdminConcurrency: '并发（管理员调整）',
@@ -2029,6 +2091,7 @@ export default {
       optionalDescription: '可选描述',
       platformHint: '选择此分组关联的平台',
       platformNotEditable: '创建后不可更改平台',
+      multiPlatformBanner: '该分组挂载了多平台账号：',
       noGroupsYet: '暂无分组',
       createFirstGroup: '创建您的第一个分组来组织 API 密钥。',
       creating: '创建中...',
@@ -2084,7 +2147,13 @@ export default {
       },
       imagePricing: {
         title: '图片生成计费',
-        description: '配置图片生成模型的图片生成价格，留空则使用默认价格'
+        description: '配置图片生成能力和图片基础单价，留空则使用默认价格',
+        allowImageGeneration: '允许当前分组生图',
+        independentMultiplier: '生图倍率独立',
+        imageMultiplier: '生图独立倍率',
+        modeHint: '默认关闭独立倍率时，图片费用 = 图片价格 × 当前分组有效倍率；开启独立倍率后，图片费用 = 图片价格 × 生图独立倍率。',
+        finalPricePreview: '最终单张价格预览',
+        notConfigured: '未配置'
       },
       claudeCode: {
         title: 'Claude Code 客户端限制',
@@ -2157,6 +2226,13 @@ export default {
         tooltip: '启用后，当请求包含 MCP 工具时，会在 system prompt 中注入 XML 格式调用协议提示词。关闭此选项可避免对某些客户端造成干扰。',
         enabled: '已启用',
         disabled: '已禁用'
+      },
+      claudeMaxSimulation: {
+        title: 'Claude Max 使用模拟',
+        tooltip: '启用后，对于没有上游 cache-write 用量的 Claude 模型，系统会确定性地将 token 映射为少量输入加 1 小时缓存创建，同时保持总 token 数不变。',
+        enabled: '已启用（模拟 1 小时缓存）',
+        disabled: '已禁用',
+        hint: '仅调整使用记账日志中的 token 分类，不会持久化每次请求的映射状态。'
       },
       supportedScopes: {
         title: '支持的模型系列',
@@ -5066,7 +5142,7 @@ export default {
       },
       linuxdo: {
         title: 'LinuxDo Connect 登录',
-        description: '配置 LinuxDo Connect OAuth，用于 Sub2API 用户登录',
+        description: '配置 LinuxDo Connect OAuth，用于 KuaiAPI 用户登录',
         enable: '启用 LinuxDo 登录',
         enableHint: '在登录/注册页面显示 LinuxDo 登录入口',
         clientId: 'Client ID',
@@ -5223,7 +5299,7 @@ export default {
           '禁用用户注册、公开页面和自助服务功能。仅管理员可以登录和管理平台。',
         siteName: '站点名称',
         siteNameHint: '显示在邮件和页面标题中',
-        siteNamePlaceholder: 'Sub2API',
+        siteNamePlaceholder: 'KuaiAPI',
         siteSubtitle: '站点副标题',
         siteSubtitleHint: '显示在登录和注册页面',
         siteSubtitlePlaceholder: '订阅转 API 转换平台',
@@ -5361,6 +5437,7 @@ export default {
         providerAlipay: '支付宝官方',
         providerWxpay: '微信官方',
         providerStripe: 'Stripe',
+        providerAirwallex: 'Airwallex',
         typeDisabled: '类型已禁用',
         enableTypesFirst: '请先在上方启用至少一种服务商',
         easypayRedirect: '跳转',
@@ -5393,6 +5470,12 @@ export default {
         field_cidAlipay: '支付宝渠道 ID',
         field_cidWxpay: '微信渠道 ID',
         stripeWebhookHint: '请在 Stripe Dashboard 中将以下地址配置为 Webhook 端点：',
+        field_clientId: 'Client ID',
+        field_apiKey: 'API 密钥',
+        field_environment: '环境',
+        field_currency: '币种',
+        airwallexWebhookHint: '请在 Airwallex Dashboard 中将以下地址配置为 Webhook 端点。API 凭证获取地址：https://www.airwallex.com/app/setting/api',
+        airwallexEnvironmentHint: '沙箱测试请填写 "demo"，生产环境请填写 "prod"。',
         limitsTitle: '限额配置',
         limitSingleMin: '单笔最低',
         limitSingleMax: '单笔最高',
@@ -5493,7 +5576,7 @@ export default {
         fromEmail: '发件人邮箱',
         fromEmailPlaceholder: "noreply{'@'}example.com",
         fromName: '发件人名称',
-        fromNamePlaceholder: 'Sub2API',
+        fromNamePlaceholder: 'KuaiAPI',
         useTls: '使用 TLS',
         useTlsHint: '为 SMTP 连接启用 TLS 加密'
       },
@@ -5645,6 +5728,16 @@ export default {
         cooldownMinutesHint: '账号暂停调度的持续时间（1-120 分钟）',
         saved: '过载冷却设置保存成功',
         saveFailed: '保存过载冷却设置失败'
+      },
+      rateLimit429Cooldown: {
+        title: '429 默认回避',
+        description: '配置上游返回 429 且没有明确重置时间时的默认账号回避策略',
+        enabled: '启用 429 默认回避',
+        enabledHint: '收到无重置时间的 429 时暂停该账号调度，冷却后自动恢复',
+        cooldownSeconds: '回避时长（秒）',
+        cooldownSecondsHint: '默认回避持续时间（1-7200 秒）；上游返回明确 reset 时仍优先使用上游时间',
+        saved: '429 默认回避设置保存成功',
+        saveFailed: '保存 429 默认回避设置失败'
       },
       streamTimeout: {
         title: '流超时处理',
@@ -6088,16 +6181,16 @@ export default {
     // Admin tour steps
     admin: {
       welcome: {
-        title: '👋 欢迎使用 Sub2API',
+        title: '👋 欢迎使用 KuaiAPI',
         description:
-          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">Sub2API 是一个强大的 AI 服务中转平台，让您轻松管理和分发 AI 服务。</p><p style="margin-bottom: 12px;"><b>🎯 核心功能：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>分组管理</b> - 创建不同的服务套餐（VIP、免费试用等）</li><li>🔗 <b>账号池</b> - 连接多个上游 AI 服务商账号</li><li>🔑 <b>密钥分发</b> - 为用户生成独立的 API Key</li><li>💰 <b>计费管理</b> - 灵活的费率和配额控制</li></ul><p style="color: #10b981; font-weight: 600;">接下来，我们将用 3 分钟带您完成首次配置 →</p></div>',
+          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">KuaiAPI 是一个强大的 AI 服务中转平台，让您轻松管理和分发 AI 服务。</p><p style="margin-bottom: 12px;"><b>🎯 核心功能：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>📦 <b>分组管理</b> - 创建不同的服务套餐（VIP、免费试用等）</li><li>🔗 <b>账号池</b> - 连接多个上游 AI 服务商账号</li><li>🔑 <b>密钥分发</b> - 为用户生成独立的 API Key</li><li>💰 <b>计费管理</b> - 灵活的费率和配额控制</li></ul><p style="color: #10b981; font-weight: 600;">接下来，我们将用 3 分钟带您完成首次配置 →</p></div>',
         nextBtn: '开始配置 🚀',
         prevBtn: '跳过'
       },
       groupManage: {
         title: '📦 第一步：分组管理',
         description:
-          '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>什么是分组？</b></p><p style="margin-bottom: 12px;">分组是 Sub2API 的核心概念，它就像一个"服务套餐"：</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 每个分组可以包含多个上游账号</li><li>💰 每个分组有独立的计费倍率</li><li>👥 可以设置为公开或专属分组</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 示例：</b>您可以创建"VIP专线"（高倍率）和"免费试用"（低倍率）两个分组</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 点击左侧的"分组管理"开始</p></div>'
+          '<div style="line-height: 1.7;"><p style="margin-bottom: 12px;"><b>什么是分组？</b></p><p style="margin-bottom: 12px;">分组是 KuaiAPI 的核心概念，它就像一个"服务套餐"：</p><ul style="margin-left: 20px; margin-bottom: 12px; font-size: 13px;"><li>🎯 每个分组可以包含多个上游账号</li><li>💰 每个分组有独立的计费倍率</li><li>👥 可以设置为公开或专属分组</li></ul><p style="margin-top: 12px; padding: 8px 12px; background: #f0fdf4; border-left: 3px solid #10b981; border-radius: 4px; font-size: 13px;"><b>💡 示例：</b>您可以创建"VIP专线"（高倍率）和"免费试用"（低倍率）两个分组</p><p style="margin-top: 16px; color: #10b981; font-weight: 600;">👉 点击左侧的"分组管理"开始</p></div>'
       },
       createGroup: {
         title: '➕ 创建新分组',
@@ -6209,9 +6302,9 @@ export default {
     // User tour steps
     user: {
       welcome: {
-        title: '👋 欢迎使用 Sub2API',
+        title: '👋 欢迎使用 KuaiAPI',
         description:
-          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">您好！欢迎来到 Sub2API AI 服务平台。</p><p style="margin-bottom: 12px;"><b>🎯 快速开始：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 创建 API 密钥</li><li>📋 复制密钥到您的应用</li><li>🚀 开始使用 AI 服务</li></ul><p style="color: #10b981; font-weight: 600;">只需 1 分钟，让我们开始吧 →</p></div>',
+          '<div style="line-height: 1.8;"><p style="margin-bottom: 16px;">您好！欢迎来到 KuaiAPI AI 服务平台。</p><p style="margin-bottom: 12px;"><b>🎯 快速开始：</b></p><ul style="margin-left: 20px; margin-bottom: 16px;"><li>🔑 创建 API 密钥</li><li>📋 复制密钥到您的应用</li><li>🚀 开始使用 AI 服务</li></ul><p style="color: #10b981; font-weight: 600;">只需 1 分钟，让我们开始吧 →</p></div>',
         nextBtn: '开始 🚀',
         prevBtn: '跳过'
       },
@@ -6257,6 +6350,7 @@ export default {
     paymentMethod: '支付方式',
     fee: '手续费',
     actualPay: '实付金额',
+    paidWith: '使用 {provider} 支付',
     createOrder: '确认支付',
     methods: {
       easypay: '易支付',
@@ -6267,6 +6361,7 @@ export default {
       link: 'Link',
       alipay_direct: '支付宝（直连）',
       wxpay_direct: '微信支付（直连）',
+      airwallex: 'Airwallex',
     },
     status: {
       pending: '待支付',

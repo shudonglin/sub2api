@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/config"
 )
 
 // defaultAllowed 定义允许透传的响应头白名单
@@ -32,6 +32,27 @@ var defaultAllowed = map[string]struct{}{
 	"retry-after":                    {},
 	"location":                       {},
 	"www-authenticate":               {},
+}
+
+// builtinBlocked is a hardcoded set of response headers that are always stripped,
+// regardless of additional_allowed configuration. These headers can be used by
+// upstream providers (e.g. Anthropic) to track client identity, inject cookies,
+// or probe network paths. Even if additional_allowed explicitly lists them,
+// they cannot be re-enabled.
+//
+//   - set-cookie: upstream cookies for cross-request session tracking
+//   - alt-svc: HTTP/3 upgrade broadcast revealing CDN/node topology
+//   - server-timing: server-side performance timing aiding topology inference
+//   - report-to: network error reporting endpoint sending client events upstream
+//   - nel: Network Error Logging, same as above
+//   - origin-agent-cluster: browser isolation policy, meaningless for API clients
+var builtinBlocked = map[string]struct{}{
+	"set-cookie":           {},
+	"alt-svc":              {},
+	"server-timing":        {},
+	"report-to":            {},
+	"nel":                  {},
+	"origin-agent-cluster": {},
 }
 
 // hopByHopHeaders 是跳过的 hop-by-hop 头部，这些头部由 HTTP 库自动处理
@@ -64,9 +85,11 @@ func CompileHeaderFilter(cfg config.ResponseHeaderConfig) *CompiledHeaderFilter 
 		}
 	}
 
-	forceRemove := map[string]struct{}{}
+	forceRemove := make(map[string]struct{}, len(builtinBlocked)+len(cfg.ForceRemove))
+	for key := range builtinBlocked {
+		forceRemove[key] = struct{}{}
+	}
 	if cfg.Enabled {
-		forceRemove = make(map[string]struct{}, len(cfg.ForceRemove))
 		for _, key := range cfg.ForceRemove {
 			normalized := strings.ToLower(strings.TrimSpace(key))
 			if normalized == "" {

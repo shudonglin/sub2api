@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
 
@@ -19,7 +19,7 @@ func TestSchedulerSnapshotOutboxReplay(t *testing.T) {
 
 	_, _ = integrationDB.ExecContext(ctx, "TRUNCATE scheduler_outbox")
 
-	accountRepo := newAccountRepositoryWithSQL(client, integrationDB, nil)
+	accountRepo := newAccountRepositoryWithSQL(client, integrationDB, nil, nil)
 	outboxRepo := NewSchedulerOutboxRepository(integrationDB)
 	cache := NewSchedulerCache(rdb)
 

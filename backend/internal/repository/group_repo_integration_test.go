@@ -8,9 +8,9 @@ import (
 	"errors"
 	"testing"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/service"
 	"github.com/stretchr/testify/suite"
 )
 
@@ -776,4 +776,44 @@ func (s *GroupRepoSuite) TestDelete_SoftDeletedGroup_lockForUpdate() {
 	_, err = s.repo.GetByID(s.ctx, group.ID)
 	s.Require().Error(err, "should fail to get soft-deleted group")
 	s.Require().ErrorIs(err, service.ErrGroupNotFound)
+}
+
+func (s *GroupRepoSuite) TestGetAccountPlatforms_DistinctSet() {
+	// Group with 3 accounts (2 openai, 1 anthropic) — DISTINCT should yield 2 entries.
+	group := &service.Group{
+		Name:             "platforms-distinct",
+		Platform:         service.PlatformOpenAI,
+		RateMultiplier:   1.0,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	a1 := mustCreateAccount(s.T(), s.tx.Client(), &service.Account{Name: "openai-1", Platform: service.PlatformOpenAI})
+	a2 := mustCreateAccount(s.T(), s.tx.Client(), &service.Account{Name: "openai-2", Platform: service.PlatformOpenAI})
+	a3 := mustCreateAccount(s.T(), s.tx.Client(), &service.Account{Name: "anthropic-1", Platform: service.PlatformAnthropic})
+	s.Require().NoError(s.repo.BindAccountsToGroup(s.ctx, group.ID, []int64{a1.ID, a2.ID, a3.ID}))
+
+	platforms, err := s.repo.GetAccountPlatforms(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().ElementsMatch([]string{service.PlatformOpenAI, service.PlatformAnthropic}, platforms,
+		"expected DISTINCT to dedupe duplicate openai")
+}
+
+func (s *GroupRepoSuite) TestGetAccountPlatforms_EmptyGroup_NonNilEmptySlice() {
+	// Zero-account group must return non-nil empty slice (NOT nil) so service.GroupAccountPlatforms
+	// can distinguish 'queried, found 0' from 'never queried' (legacy snapshot).
+	group := &service.Group{
+		Name:             "platforms-empty",
+		Platform:         service.PlatformOpenAI,
+		RateMultiplier:   1.0,
+		Status:           service.StatusActive,
+		SubscriptionType: service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	platforms, err := s.repo.GetAccountPlatforms(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().NotNil(platforms, "non-nil empty slice required for nil-vs-empty distinction")
+	s.Require().Empty(platforms)
 }

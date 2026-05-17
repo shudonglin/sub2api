@@ -6,9 +6,9 @@ import (
 	"math"
 	"net/http"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/util/logredact"
 	"github.com/gin-gonic/gin"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/util/logredact"
 )
 
 // Response 标准API响应格式
@@ -88,7 +88,10 @@ func ErrorFrom(c *gin.Context, err error) bool {
 
 	// Log internal errors with full details for debugging
 	if statusCode >= 500 && c.Request != nil {
-		log.Printf("[ERROR] %s %s\n  Error: %s", c.Request.Method, c.Request.URL.Path, logredact.RedactText(err.Error()))
+		log.Printf("[ERROR] %s %s\n  Error: %s",
+			logredact.SafeLogValue(c.Request.Method),
+			logredact.SafeLogValue(c.Request.URL.Path),
+			logredact.RedactText(err.Error()))
 	}
 
 	ErrorWithDetails(c, statusCode, status.Message, status.Reason, status.Metadata)

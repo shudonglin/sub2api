@@ -151,6 +151,8 @@ type SystemSettings struct {
 	// Gateway forwarding behavior
 	EnableFingerprintUnification       bool // 是否统一 OAuth 账号的指纹头（默认 true）
 	EnableMetadataPassthrough          bool // 是否透传客户端原始 metadata（默认 false）
+	EnableMetadataUserIDAnonymization  bool // 是否匿名化 metadata.user_id 中的 device/account 标识（默认 false）
+	EnablePrivacyMode                  bool // 隐私强化模式：强制开启指纹统一 + metadata 匿名化 + 会话 ID 伪装（默认 true）
 	EnableCCHSigning                   bool // 是否对 billing header cch 进行签名（默认 false）
 	EnableAnthropicCacheTTL1hInjection bool // 是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl（默认 false）
 
@@ -381,11 +383,27 @@ type OverloadCooldownSettings struct {
 	CooldownMinutes int `json:"cooldown_minutes"`
 }
 
+// RateLimit429CooldownSettings 429默认回避配置
+type RateLimit429CooldownSettings struct {
+	// Enabled 是否在无法解析上游重置时间时应用默认429回避
+	Enabled bool `json:"enabled"`
+	// CooldownSeconds 默认回避时长（秒）
+	CooldownSeconds int `json:"cooldown_seconds"`
+}
+
 // DefaultOverloadCooldownSettings 返回默认的过载冷却配置（启用，10分钟）
 func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	return &OverloadCooldownSettings{
 		Enabled:         true,
 		CooldownMinutes: 10,
+	}
+}
+
+// DefaultRateLimit429CooldownSettings 返回默认的429回避配置（启用，5秒）
+func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
+	return &RateLimit429CooldownSettings{
+		Enabled:         true,
+		CooldownSeconds: 5,
 	}
 }
 

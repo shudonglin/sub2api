@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -280,6 +280,19 @@ func (m *mockGroupRepoForGateway) ExistsByName(ctx context.Context, name string)
 }
 func (m *mockGroupRepoForGateway) GetAccountCount(ctx context.Context, groupID int64) (int64, int64, error) {
 	return 0, 0, nil
+}
+func (m *mockGroupRepoForGateway) GetAccountPlatforms(ctx context.Context, groupID int64) ([]string, error) {
+	// Default mock returns the group's primary platform as the derived set —
+	// the existing routing tests are single-platform fixtures, so this
+	// matches the legacy fallback behavior. Tests that need a multi-platform
+	// derived set should override this method.
+	if g, ok := m.groups[groupID]; ok {
+		if g.Platform == "" {
+			return nil, nil
+		}
+		return []string{g.Platform}, nil
+	}
+	return nil, nil
 }
 func (m *mockGroupRepoForGateway) DeleteAccountGroupsByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, nil

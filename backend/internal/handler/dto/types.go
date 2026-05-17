@@ -3,7 +3,7 @@ package dto
 import (
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/shudonglin/sub2api/internal/domain"
 )
 
 type User struct {
@@ -94,9 +94,12 @@ type Group struct {
 	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K *float64 `json:"image_price_1k"`
-	ImagePrice2K *float64 `json:"image_price_2k"`
-	ImagePrice4K *float64 `json:"image_price_4k"`
+	AllowImageGeneration bool     `json:"allow_image_generation"`
+	ImageRateIndependent bool     `json:"image_rate_independent"`
+	ImageRateMultiplier  float64  `json:"image_rate_multiplier"`
+	ImagePrice1K         *float64 `json:"image_price_1k"`
+	ImagePrice2K         *float64 `json:"image_price_2k"`
+	ImagePrice4K         *float64 `json:"image_price_4k"`
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
@@ -140,6 +143,13 @@ type AdminGroup struct {
 	AccountCount            int64          `json:"account_count,omitempty"`
 	ActiveAccountCount      int64          `json:"active_account_count,omitempty"`
 	RateLimitedAccountCount int64          `json:"rate_limited_account_count,omitempty"`
+
+	// AccountPlatforms is the DISTINCT set of account.platform across accounts
+	// currently bound to this group (multi-platform groups feature). Frontend
+	// uses this to render platform badges on group rows / dialogs / pickers
+	// so admins can see at-a-glance which groups are mixed-platform.
+	// Nil when not yet hydrated; non-nil empty slice when group has zero accounts.
+	AccountPlatforms []string `json:"account_platforms,omitempty"`
 
 	// 分组排序
 	SortOrder int `json:"sort_order"`

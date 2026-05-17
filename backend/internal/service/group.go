@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/shudonglin/sub2api/internal/domain"
 )
 
 type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfig
@@ -19,6 +19,14 @@ type Group struct {
 	Status         string
 	Hydrated       bool // indicates the group was loaded from a trusted repository source
 
+	// AccountPlatforms is the DISTINCT set of platforms across accounts currently bound to this group.
+	// Populated by API key auth snapshot loader and admin write paths via groupRepo.GetAccountPlatforms.
+	// Nil = field never populated (legacy snapshot pre-deploy, or admin object before hydration);
+	// readers MUST use service.GroupAccountPlatforms helper for nil-tolerant access — it falls back to
+	// []string{Platform} when nil. Empty slice (non-nil) means "queried, found 0 accounts" — a valid
+	// empty derived set, NOT a fallback trigger.
+	AccountPlatforms []string
+
 	SubscriptionType    string
 	DailyLimitUSD       *float64
 	WeeklyLimitUSD      *float64
@@ -26,9 +34,12 @@ type Group struct {
 	DefaultValidityDays int
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）
-	ImagePrice1K *float64
-	ImagePrice2K *float64
-	ImagePrice4K *float64
+	AllowImageGeneration bool
+	ImageRateIndependent bool
+	ImageRateMultiplier  float64
+	ImagePrice1K         *float64
+	ImagePrice2K         *float64
+	ImagePrice4K         *float64
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool

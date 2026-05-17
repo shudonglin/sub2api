@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	adminhandler "github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/handler"
+	adminhandler "github.com/shudonglin/sub2api/internal/handler/admin"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/usagestats"
+	"github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -328,6 +328,9 @@ func TestAPIContracts(t *testing.T) {
 						"image_price_1k": null,
 						"image_price_2k": null,
 						"image_price_4k": null,
+						"allow_image_generation": false,
+						"image_rate_independent": false,
+						"image_rate_multiplier": 0,
 						"claude_code_only": false,
 						"allow_messages_dispatch": false,
 						"fallback_group_id": null,
@@ -743,6 +746,8 @@ func TestAPIContracts(t *testing.T) {
 					"enable_anthropic_cache_ttl_1h_injection": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
+					"enable_metadata_userid_anonymization": false,
+					"enable_privacy_mode": true,
 					"web_search_emulation_enabled": false,
 					"payment_visible_method_alipay_source": "easypay_alipay",
 					"payment_visible_method_wxpay_source": "official_wxpay",
@@ -934,6 +939,8 @@ func TestAPIContracts(t *testing.T) {
 					"backend_mode_enabled": false,
 					"enable_fingerprint_unification": true,
 					"enable_metadata_passthrough": false,
+					"enable_metadata_userid_anonymization": false,
+					"enable_privacy_mode": true,
 					"enable_cch_signing": false,
 					"enable_anthropic_cache_ttl_1h_injection": false,
 					"web_search_emulation_enabled": false,
@@ -1411,6 +1418,10 @@ func (stubGroupRepo) Delete(ctx context.Context, id int64) error {
 
 func (stubGroupRepo) DeleteCascade(ctx context.Context, id int64) ([]int64, error) {
 	return nil, errors.New("not implemented")
+}
+
+func (stubGroupRepo) GetAccountPlatforms(ctx context.Context, groupID int64) ([]string, error) {
+	return []string{}, nil
 }
 
 func (stubGroupRepo) List(ctx context.Context, params pagination.PaginationParams) ([]service.Group, *pagination.PaginationResult, error) {

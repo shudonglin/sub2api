@@ -7,7 +7,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,6 +55,9 @@ func (s *stubGroupRepoForAvailable) ExistsByName(ctx context.Context, name strin
 }
 func (s *stubGroupRepoForAvailable) GetAccountCount(ctx context.Context, groupID int64) (int64, int64, error) {
 	return 0, 0, nil
+}
+func (s *stubGroupRepoForAvailable) GetAccountPlatforms(ctx context.Context, groupID int64) ([]string, error) {
+	return []string{}, nil
 }
 func (s *stubGroupRepoForAvailable) DeleteAccountGroupsByGroupID(ctx context.Context, groupID int64) (int64, error) {
 	return 0, nil

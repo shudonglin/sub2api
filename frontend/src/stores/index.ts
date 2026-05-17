@@ -10,6 +10,7 @@ export { useSubscriptionStore } from './subscriptions'
 export { useOnboardingStore } from './onboarding'
 export { useAnnouncementStore } from './announcements'
 export { usePaymentStore } from './payment'
+export { usePendingRegistrationStore } from './pendingRegistration'
 
 // Re-export types for convenience
 export type { User, LoginRequest, RegisterRequest, AuthResponse } from '@/types'
