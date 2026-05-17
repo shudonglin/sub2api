@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -42,6 +42,9 @@ func (groupRepoNoop) ExistsByName(context.Context, string) (bool, error) {
 }
 func (groupRepoNoop) GetAccountCount(context.Context, int64) (int64, int64, error) {
 	panic("unexpected GetAccountCount call")
+}
+func (groupRepoNoop) GetAccountPlatforms(context.Context, int64) ([]string, error) {
+	panic("unexpected GetAccountPlatforms call")
 }
 func (groupRepoNoop) DeleteAccountGroupsByGroupID(context.Context, int64) (int64, error) {
 	panic("unexpected DeleteAccountGroupsByGroupID call")

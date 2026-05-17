@@ -12,16 +12,17 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Wei-Shaw/sub2api/internal/domain"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/gemini"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/googleapi"
-	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/google/uuid"
+	"github.com/shudonglin/sub2api/internal/domain"
+	"github.com/shudonglin/sub2api/internal/pkg/antigravity"
+	"github.com/shudonglin/sub2api/internal/pkg/gemini"
+	"github.com/shudonglin/sub2api/internal/pkg/googleapi"
+	pkghttputil "github.com/shudonglin/sub2api/internal/pkg/httputil"
+	"github.com/shudonglin/sub2api/internal/pkg/ip"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/util/logredact"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -39,14 +40,16 @@ func (h *GatewayHandler) GeminiV1BetaListModels(c *gin.Context) {
 		googleError(c, http.StatusUnauthorized, "Invalid API key")
 		return
 	}
-	// 检查平台：优先使用强制平台（/antigravity 路由），否则要求 gemini 分组
-	forcePlatform, hasForcePlatform := middleware.GetForcePlatformFromContext(c)
-	if !hasForcePlatform && (apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini) {
+	// 检查平台：派生集合包含 gemini（含 ForcePlatform 短路）即可放行
+	if !middleware.GroupHasPlatform(c, service.PlatformGemini) {
 		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
 		return
 	}
 
 	// 强制 antigravity 模式：返回 antigravity 支持的模型列表
+	// 注意：保留对 ForcePlatform 的直接读取——antigravity 模型列表的精选行为绑定 ForcePlatform 模式，
+	// 不能改用 ResolvePlatform，否则单平台 gemini 分组也会被误判为 antigravity。
+	forcePlatform, _ := middleware.GetForcePlatformFromContext(c)
 	if forcePlatform == service.PlatformAntigravity {
 		c.JSON(http.StatusOK, antigravity.FallbackGeminiModelsList())
 		return
@@ -85,9 +88,8 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 		googleError(c, http.StatusUnauthorized, "Invalid API key")
 		return
 	}
-	// 检查平台：优先使用强制平台（/antigravity 路由），否则要求 gemini 分组
-	forcePlatform, hasForcePlatform := middleware.GetForcePlatformFromContext(c)
-	if !hasForcePlatform && (apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini) {
+	// 检查平台：派生集合包含 gemini（含 ForcePlatform 短路）即可放行
+	if !middleware.GroupHasPlatform(c, service.PlatformGemini) {
 		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
 		return
 	}
@@ -99,6 +101,8 @@ func (h *GatewayHandler) GeminiV1BetaGetModel(c *gin.Context) {
 	}
 
 	// 强制 antigravity 模式：返回 antigravity 模型信息
+	// 注意：保留对 ForcePlatform 的直接读取——antigravity 模型详情的精选行为绑定 ForcePlatform 模式。
+	forcePlatform, _ := middleware.GetForcePlatformFromContext(c)
 	if forcePlatform == service.PlatformAntigravity {
 		c.JSON(http.StatusOK, antigravity.FallbackGeminiModel(modelName))
 		return
@@ -151,12 +155,10 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 		zap.Any("group_id", apiKey.GroupID),
 	)
 
-	// 检查平台：优先使用强制平台（/antigravity 路由，中间件已设置 request.Context），否则要求 gemini 分组
-	if !middleware.HasForcePlatform(c) {
-		if apiKey.Group == nil || apiKey.Group.Platform != service.PlatformGemini {
-			googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
-			return
-		}
+	// 检查平台：派生集合包含 gemini（含 ForcePlatform 短路）即可放行
+	if !middleware.GroupHasPlatform(c, service.PlatformGemini) {
+		googleError(c, http.StatusBadRequest, "API key group platform is not gemini")
+		return
 	}
 
 	modelName, action, err := parseGeminiModelAction(strings.TrimPrefix(c.Param("modelAction"), "/"))
@@ -166,7 +168,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 	}
 
 	stream := action == "streamGenerateContent"
-	reqLog = reqLog.With(zap.String("model", modelName), zap.String("action", action), zap.Bool("stream", stream))
+	reqLog = reqLog.With(zap.String("model", logredact.SafeLogValue(modelName)), zap.String("action", logredact.SafeLogValue(action)), zap.Bool("stream", stream))
 
 	body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
@@ -302,10 +304,9 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 				// 生成前缀 hash
 				userAgent := c.GetHeader("User-Agent")
 				clientIP := ip.GetClientIP(c)
-				platform := ""
-				if apiKey.Group != nil {
-					platform = apiKey.Group.Platform
-				}
+				// 3-tier 平台解析：ForcePlatform > requested_platform > Group.Platform
+				// 单平台 gemini 分组在无 ForcePlatform/requested_platform 时仍回退到 Group.Platform，保持原 digest hash 不变。
+				platform := middleware.ResolvePlatform(c, apiKey)
 				geminiPrefixHash = service.GenerateGeminiPrefixHash(
 					authSubject.UserID,
 					apiKey.ID,

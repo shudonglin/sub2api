@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
@@ -13,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/authidentity"
+	"github.com/shudonglin/sub2api/internal/config"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
 
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -26,7 +27,7 @@ import (
 var (
 	ErrInvalidCredentials      = infraerrors.Unauthorized("INVALID_CREDENTIALS", "invalid email or password")
 	ErrUserNotActive           = infraerrors.Forbidden("USER_NOT_ACTIVE", "user is not active")
-	ErrEmailExists             = infraerrors.Conflict("EMAIL_EXISTS", "email already exists")
+	ErrEmailExists             = infraerrors.Conflict("REGISTRATION_FAILED", "registration failed")
 	ErrEmailReserved           = infraerrors.BadRequest("EMAIL_RESERVED", "email is reserved")
 	ErrInvalidToken            = infraerrors.Unauthorized("INVALID_TOKEN", "invalid token")
 	ErrTokenExpired            = infraerrors.Unauthorized("TOKEN_EXPIRED", "token has expired")
@@ -1546,6 +1547,16 @@ func hashToken(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// resolvedTokenVersionFingerprintSalt is a fixed HMAC key used to derive a
+// non-secret fingerprint from email + password-hash material. Using HMAC-SHA256
+// (rather than bare SHA256) keeps the property that an attacker who somehow
+// obtained a fingerprint cannot run dictionary attacks back to the inputs,
+// and closes CodeQL go/weak-sensitive-data-hashing on this site. The
+// fingerprint itself is not a secret — it's mixed into TokenVersion so a
+// password change invalidates outstanding JWTs even when the stored
+// TokenVersion column has not been incremented yet.
+var resolvedTokenVersionFingerprintSalt = []byte("sub2api/resolved-token-version/v1")
+
 func resolvedTokenVersion(user *User) int64 {
 	if user == nil {
 		return 0
@@ -1555,7 +1566,9 @@ func resolvedTokenVersion(user *User) int64 {
 	}
 
 	material := strings.ToLower(strings.TrimSpace(user.Email)) + "\n" + user.PasswordHash
-	sum := sha256.Sum256([]byte(material))
+	mac := hmac.New(sha256.New, resolvedTokenVersionFingerprintSalt)
+	_, _ = mac.Write([]byte(material))
+	sum := mac.Sum(nil)
 	fingerprint := int64(binary.BigEndian.Uint64(sum[:8]) & 0x7fffffffffffffff)
 	return user.TokenVersion ^ fingerprint
 }

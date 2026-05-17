@@ -2,13 +2,14 @@ package admin
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/response"
+	middleware2 "github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -469,7 +470,7 @@ func (h *DataManagementHandler) ListBackupJobs(c *gin.Context) {
 	pageSize := int32(20)
 	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
 		v, err := strconv.Atoi(raw)
-		if err != nil || v <= 0 {
+		if err != nil || v <= 0 || v > math.MaxInt32 {
 			response.BadRequest(c, "Invalid page_size")
 			return
 		}

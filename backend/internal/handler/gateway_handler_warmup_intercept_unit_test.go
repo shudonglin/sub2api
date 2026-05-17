@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	middleware "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	middleware "github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -86,6 +86,9 @@ func (f *fakeGroupRepo) ListActiveByPlatform(context.Context, string) ([]service
 func (f *fakeGroupRepo) ExistsByName(context.Context, string) (bool, error) { return false, nil }
 func (f *fakeGroupRepo) GetAccountCount(context.Context, int64) (int64, int64, error) {
 	return 0, 0, nil
+}
+func (f *fakeGroupRepo) GetAccountPlatforms(context.Context, int64) ([]string, error) {
+	return []string{}, nil
 }
 func (f *fakeGroupRepo) DeleteAccountGroupsByGroupID(context.Context, int64) (int64, error) {
 	return 0, nil

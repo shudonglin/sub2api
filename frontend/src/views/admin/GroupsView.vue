@@ -96,22 +96,48 @@
             }}</span>
           </template>
 
-          <template #cell-platform="{ value }">
-            <span
-              :class="[
-                'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
-                value === 'anthropic'
-                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
-                  : value === 'openai'
-                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                    : value === 'antigravity'
-                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
-                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-              ]"
-            >
-              <PlatformIcon :platform="value" size="xs" />
-              {{ t("admin.groups.platforms." + value) }}
-            </span>
+          <template #cell-platform="{ value, row }">
+            <div class="flex flex-wrap items-center gap-1">
+              <span
+                :class="[
+                  'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium',
+                  value === 'anthropic'
+                    ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                    : value === 'openai'
+                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                      : value === 'antigravity'
+                        ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400'
+                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+                ]"
+              >
+                <PlatformIcon :platform="value" size="xs" />
+                {{ t("admin.groups.platforms." + value) }}
+              </span>
+              <!--
+                Multi-platform indicator: when the group has accounts of additional platforms
+                beyond its primary label (Group.AccountPlatforms hydrated by admin GET endpoints),
+                render a small pill per extra platform so admins can see at-a-glance which
+                groups are mixed.
+              -->
+              <span
+                v-for="extra in extraPlatforms(row)"
+                :key="extra"
+                :class="[
+                  'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                  extra === 'anthropic'
+                    ? 'bg-orange-50 text-orange-700 ring-1 ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40'
+                    : extra === 'openai'
+                      ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40'
+                      : extra === 'antigravity'
+                        ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:ring-purple-700/40'
+                        : 'bg-blue-50 text-blue-700 ring-1 ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+                ]"
+                :title="t('admin.groups.platforms.' + extra)"
+              >
+                <PlatformIcon :platform="(extra as GroupPlatform)" size="xs" />
+                +
+              </span>
+            </div>
           </template>
 
           <template #cell-billing_type="{ row }">
@@ -666,6 +692,40 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="createForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="createForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
+          </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">1K ($)</label>
@@ -699,6 +759,22 @@
                 class="input"
                 placeholder="0.268"
               />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in createImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
+              </div>
             </div>
           </div>
         </div>
@@ -1395,7 +1471,7 @@
                           :key="account.id"
                           type="button"
                           @click="selectAccount(rule, account)"
-                          class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+                          class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700 flex items-center gap-2"
                           :class="{
                             'opacity-50': rule.accounts.some(
                               (a) => a.id === account.id,
@@ -1406,9 +1482,19 @@
                           "
                         >
                           <span>{{ account.name }}</span>
-                          <span class="ml-2 text-xs text-gray-400"
+                          <span class="text-xs text-gray-400"
                             >#{{ account.id }}</span
                           >
+                          <span
+                            v-if="account.platform"
+                            class="ml-auto inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                          >
+                            <PlatformIcon
+                              :platform="(account.platform as GroupPlatform)"
+                              size="xs"
+                            />
+                            {{ account.platform }}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1527,6 +1613,36 @@
             data-tour="group-form-platform"
           />
           <p class="input-hint">{{ t("admin.groups.platformNotEditable") }}</p>
+          <!--
+            Multi-platform info banner: when the group has accounts of platforms
+            beyond its primary label (i.e. it's a multi-platform group), surface
+            the full derived set so admins know what's actually attached.
+            account_platforms is hydrated by admin GET endpoints (Group.AccountPlatforms).
+          -->
+          <div
+            v-if="editingGroup && (editingGroup.account_platforms?.length ?? 0) > 1"
+            class="mt-2 flex flex-wrap items-center gap-1.5 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-300"
+          >
+            <Icon name="infoCircle" size="sm" class="flex-none" />
+            <span>{{ t("admin.groups.multiPlatformBanner") }}</span>
+            <span
+              v-for="p in editingGroup.account_platforms"
+              :key="p"
+              :class="[
+                'inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                p === 'anthropic'
+                  ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300'
+                  : p === 'openai'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : p === 'antigravity'
+                      ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300'
+                      : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300',
+              ]"
+            >
+              <PlatformIcon :platform="(p as GroupPlatform)" size="xs" />
+              {{ t("admin.groups.platforms." + p) }}
+            </span>
+          </div>
         </div>
         <!-- 从分组复制账号（编辑时） -->
         <div v-if="copyAccountsGroupOptionsForEdit.length > 0">
@@ -1801,6 +1917,40 @@
           <p class="text-xs text-gray-500 dark:text-gray-400 mb-3">
             {{ t("admin.groups.imagePricing.description") }}
           </p>
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.allow_image_generation"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.allowImageGeneration") }}
+            </label>
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.image_rate_independent"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              {{ t("admin.groups.imagePricing.independentMultiplier") }}
+            </label>
+          </div>
+          <div
+            v-if="editForm.image_rate_independent"
+            class="mb-4"
+          >
+            <label class="input-label">{{
+              t("admin.groups.imagePricing.imageMultiplier")
+            }}</label>
+            <input
+              v-model.number="editForm.image_rate_multiplier"
+              type="number"
+              step="0.0001"
+              min="0"
+              class="input"
+              placeholder="1"
+            />
+          </div>
           <div class="grid grid-cols-3 gap-3">
             <div>
               <label class="input-label">1K ($)</label>
@@ -1834,6 +1984,22 @@
                 class="input"
                 placeholder="0.268"
               />
+            </div>
+          </div>
+          <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
+            {{ t("admin.groups.imagePricing.modeHint") }}
+          </p>
+          <div class="mt-2 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+            <div class="mb-1 font-medium">
+              {{ t("admin.groups.imagePricing.finalPricePreview") }}
+            </div>
+            <div class="grid grid-cols-3 gap-2">
+              <div
+                v-for="item in editImageFinalPricePreview"
+                :key="item.label"
+              >
+                {{ item.label }}: {{ item.value }}
+              </div>
             </div>
           </div>
         </div>
@@ -2525,7 +2691,7 @@
                           :key="account.id"
                           type="button"
                           @click="selectAccount(rule, account, true)"
-                          class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700"
+                          class="w-full px-3 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-dark-700 flex items-center gap-2"
                           :class="{
                             'opacity-50': rule.accounts.some(
                               (a) => a.id === account.id,
@@ -2536,9 +2702,19 @@
                           "
                         >
                           <span>{{ account.name }}</span>
-                          <span class="ml-2 text-xs text-gray-400"
+                          <span class="text-xs text-gray-400"
                             >#{{ account.id }}</span
                           >
+                          <span
+                            v-if="account.platform"
+                            class="ml-auto inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                          >
+                            <PlatformIcon
+                              :platform="(account.platform as GroupPlatform)"
+                              size="xs"
+                            />
+                            {{ account.platform }}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -2759,6 +2935,10 @@ import { createStableObjectKeyResolver } from "@/utils/stableObjectKey";
 import { useKeyedDebouncedSearch } from "@/composables/useKeyedDebouncedSearch";
 import { getPersistedPageSize } from "@/composables/usePersistedPageSize";
 import {
+  getEligibleAccountPlatforms,
+  isAccountEligibleForGroup,
+} from "@/utils/groupPlatform";
+import {
   createDefaultMessagesDispatchFormState,
   messagesDispatchConfigToFormState,
   messagesDispatchFormStateToConfig,
@@ -2919,10 +3099,17 @@ const invalidRequestFallbackOptionsForEdit = computed(() => {
   return options;
 });
 
-// 复制账号的源分组选项（创建时）- 仅包含相同平台且有账号的分组
+// 复制账号的源分组选项（创建时）- 包含同平台或允许跨平台 attach 的分组（多平台 group 范围内：
+// openai/azure ↔ anthropic 互通；gemini/antigravity 仍仅同平台）。
+// `isAccountEligibleForGroup` 把 source group 当作具备 `platform` 字段的 account-like 对象判断 —
+// 实际 per-account 兼容性由后端 isAttachAllowed/isAccountInScope 在 bind 时再校验。
 const copyAccountsGroupOptions = computed(() => {
   const eligibleGroups = groups.value.filter(
-    (g) => g.platform === createForm.platform && (g.account_count || 0) > 0,
+    (g) =>
+      isAccountEligibleForGroup(
+        { platform: g.platform },
+        { platform: createForm.platform },
+      ) && (g.account_count || 0) > 0,
   );
   return eligibleGroups.map((g) => ({
     value: g.id,
@@ -2930,12 +3117,15 @@ const copyAccountsGroupOptions = computed(() => {
   }));
 });
 
-// 复制账号的源分组选项（编辑时）- 仅包含相同平台且有账号的分组，排除自身
+// 复制账号的源分组选项（编辑时）- 同上，但排除自身
 const copyAccountsGroupOptionsForEdit = computed(() => {
   const currentId = editingGroup.value?.id;
   const eligibleGroups = groups.value.filter(
     (g) =>
-      g.platform === editForm.platform &&
+      isAccountEligibleForGroup(
+        { platform: g.platform },
+        { platform: editForm.platform },
+      ) &&
       (g.account_count || 0) > 0 &&
       g.id !== currentId,
   );
@@ -2944,6 +3134,20 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
     label: `${g.name} (${g.account_count || 0} 个账号)`,
   }));
 });
+
+// extraPlatforms returns the set of account.platform values present in this group
+// that are NOT the primary Group.Platform label. The list-view's #cell-platform
+// renders one small "+ openai"/"+ anthropic" pill per extra so admins can see
+// at-a-glance which groups have mixed-platform accounts.
+//
+// Returns empty array when:
+// - account_platforms not yet hydrated (legacy / pre-deploy backend)
+// - group has only same-platform accounts as its primary (single-platform — common)
+function extraPlatforms(group: { platform?: string; account_platforms?: string[] }): string[] {
+  const set = group?.account_platforms;
+  if (!set || set.length === 0) return [];
+  return set.filter((p) => p && p !== group.platform);
+}
 
 const groups = ref<AdminGroup[]>([]);
 const loading = ref(false);
@@ -3009,7 +3213,10 @@ const createForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置（仅 antigravity 平台使用）
+  // 图片生成计费配置
+  allow_image_generation: false,
+  image_rate_independent: false,
+  image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
@@ -3042,6 +3249,7 @@ const createForm = reactive({
 interface SimpleAccount {
   id: number;
   name: string;
+  platform: string;
 }
 
 // 模型路由规则类型
@@ -3105,19 +3313,54 @@ const clearAllAccountSearchState = () => {
   showAccountDropdown.value = {};
 };
 
+// 解析搜索 key 对应的分组平台（区分 create-/edit- 前缀）
+const resolveGroupPlatformForKey = (key: string): GroupPlatform => {
+  if (key.startsWith("edit-")) return editForm.platform;
+  return createForm.platform;
+};
+
 const accountSearchRunner = useKeyedDebouncedSearch<SimpleAccount[]>({
   delay: 300,
-  search: async (keyword, { signal }) => {
-    const res = await adminAPI.accounts.list(
-      1,
-      20,
-      {
-        search: keyword,
-        platform: "anthropic",
-      },
-      { signal },
+  search: async (keyword, { key, signal }) => {
+    const groupPlatform = resolveGroupPlatformForKey(key);
+    const eligiblePlatforms = getEligibleAccountPlatforms(groupPlatform);
+    if (eligiblePlatforms.length === 0) return [];
+
+    // 跨平台允许时为每个候选平台并发请求并按 id 去重合并
+    const responses = await Promise.all(
+      eligiblePlatforms.map((platform) =>
+        adminAPI.accounts
+          .list(
+            1,
+            20,
+            {
+              search: keyword,
+              platform,
+            },
+            { signal },
+          )
+          .catch(() => ({ items: [] as { id: number; name: string; platform: string }[] })),
+      ),
     );
-    return res.items.map((account) => ({ id: account.id, name: account.name }));
+
+    const seen = new Set<number>();
+    const merged: SimpleAccount[] = [];
+    for (const res of responses) {
+      for (const account of res.items) {
+        if (seen.has(account.id)) continue;
+        // 防御性二次校验：仅保留满足允许列表的账号
+        if (!isAccountEligibleForGroup(account, { platform: groupPlatform })) {
+          continue;
+        }
+        seen.add(account.id);
+        merged.push({
+          id: account.id,
+          name: account.name,
+          platform: account.platform,
+        });
+      }
+    }
+    return merged;
   },
   onSuccess: (key, result) => {
     accountSearchResults.value[key] = result;
@@ -3127,7 +3370,7 @@ const accountSearchRunner = useKeyedDebouncedSearch<SimpleAccount[]>({
   },
 });
 
-// 搜索账号（仅限 anthropic 平台）
+// 搜索账号（按当前分组平台允许的列表过滤；同平台 + openai/azure ↔ anthropic）
 const searchAccounts = (key: string) => {
   accountSearchRunner.trigger(key, accountSearchKeyword.value[key] || "");
 };
@@ -3146,6 +3389,15 @@ const selectAccount = (
   isEdit: boolean = false,
 ) => {
   if (!rule) return;
+
+  // 防御性校验：不允许加入跨平台允许列表外的账号
+  const groupPlatform = isEdit ? editForm.platform : createForm.platform;
+  if (
+    account.platform &&
+    !isAccountEligibleForGroup(account, { platform: groupPlatform })
+  ) {
+    return;
+  }
 
   // 检查是否已选择
   if (!rule.accounts.some((a) => a.id === account.id)) {
@@ -3269,10 +3521,14 @@ const convertApiFormatToRoutingRules = async (
     for (const id of accountIds) {
       try {
         const account = await adminAPI.accounts.getById(id);
-        accounts.push({ id: account.id, name: account.name });
+        accounts.push({
+          id: account.id,
+          name: account.name,
+          platform: account.platform,
+        });
       } catch {
         // 如果账号不存在，仍然显示 ID
-        accounts.push({ id, name: `#${id}` });
+        accounts.push({ id, name: `#${id}`, platform: "" });
       }
     }
     rules.push({ pattern, accounts });
@@ -3291,7 +3547,10 @@ const editForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
-  // 图片生成计费配置（仅 antigravity 平台使用）
+  // 图片生成计费配置
+  allow_image_generation: false,
+  image_rate_independent: false,
+  image_rate_multiplier: 1,
   image_price_1k: null as number | null,
   image_price_2k: null as number | null,
   image_price_4k: null as number | null,
@@ -3320,6 +3579,62 @@ const editForm = reactive({
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
 });
+
+type ImagePricingFormState = {
+  rate_multiplier: number;
+  image_rate_independent: boolean;
+  image_rate_multiplier: number;
+  image_price_1k: number | string | null;
+  image_price_2k: number | string | null;
+  image_price_4k: number | string | null;
+};
+
+const imagePricingTiers = [
+  { key: "image_price_1k", label: "1K" },
+  { key: "image_price_2k", label: "2K" },
+  { key: "image_price_4k", label: "4K" },
+] as const;
+
+const normalizePreviewNumber = (value: number | string | null | undefined, fallback = 0) => {
+  if (value === null || value === undefined || value === "") {
+    return fallback;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const formatImagePricePreview = (value: number | string | null | undefined) => {
+  if (value === null || value === undefined || value === "") {
+    return t("admin.groups.imagePricing.notConfigured");
+  }
+  const price = Number(value);
+  if (!Number.isFinite(price) || price < 0) {
+    return t("admin.groups.imagePricing.notConfigured");
+  }
+  return `$${price.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+};
+
+const buildImageFinalPricePreview = (form: ImagePricingFormState) => {
+  const multiplier = form.image_rate_independent
+    ? normalizePreviewNumber(form.image_rate_multiplier, 1)
+    : normalizePreviewNumber(form.rate_multiplier, 1);
+  return imagePricingTiers.map((tier) => {
+    const basePrice = normalizePreviewNumber(form[tier.key]);
+    return {
+      label: tier.label,
+      value: basePrice > 0
+        ? formatImagePricePreview(basePrice * multiplier)
+        : t("admin.groups.imagePricing.notConfigured"),
+    };
+  });
+};
+
+const createImageFinalPricePreview = computed(() =>
+  buildImageFinalPricePreview(createForm),
+);
+const editImageFinalPricePreview = computed(() =>
+  buildImageFinalPricePreview(editForm),
+);
 
 // 根据分组类型返回不同的删除确认消息
 const deleteConfirmMessage = computed(() => {
@@ -3479,6 +3794,9 @@ const closeCreateModal = () => {
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
+  createForm.allow_image_generation = false;
+  createForm.image_rate_independent = false;
+  createForm.image_rate_multiplier = 1;
   createForm.image_price_1k = null;
   createForm.image_price_2k = null;
   createForm.image_price_4k = null;
@@ -3511,6 +3829,16 @@ const normalizeOptionalLimit = (
   }
 
   return Number.isFinite(value) && value > 0 ? value : null;
+};
+
+const normalizeImageRateMultiplier = (
+  value: number | string | null | undefined,
+): number => {
+  if (value === null || value === undefined || value === "") {
+    return 1;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
 };
 
 const handleCreateGroup = async () => {
@@ -3551,6 +3879,9 @@ const handleCreateGroup = async () => {
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
     requestData.weekly_limit_usd = emptyToNull(requestData.weekly_limit_usd);
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
+    requestData.image_rate_multiplier = normalizeImageRateMultiplier(
+      requestData.image_rate_multiplier,
+    );
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -3582,6 +3913,9 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
+  editForm.allow_image_generation = group.allow_image_generation ?? false;
+  editForm.image_rate_independent = group.image_rate_independent ?? false;
+  editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
   editForm.image_price_1k = group.image_price_1k;
   editForm.image_price_2k = group.image_price_2k;
   editForm.image_price_4k = group.image_price_4k;
@@ -3676,6 +4010,9 @@ const handleUpdateGroup = async () => {
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
     payload.weekly_limit_usd = emptyToNull(payload.weekly_limit_usd);
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
+    payload.image_rate_multiplier = normalizeImageRateMultiplier(
+      payload.image_rate_multiplier,
+    );
     await adminAPI.groups.update(editingGroup.value.id, payload);
     appStore.showSuccess(t("admin.groups.groupUpdated"));
     closeEditModal();

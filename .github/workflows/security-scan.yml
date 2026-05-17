@@ -2,9 +2,14 @@ name: Security Scan
 
 on:
   push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: '0 3 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -14,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
         with:
           go-version-file: backend/go.mod
           check-latest: false
@@ -33,13 +38,13 @@ jobs:
   frontend-security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 9
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '20'
           cache: 'pnpm'
@@ -56,3 +61,97 @@ jobs:
           python tools/check_pnpm_audit_exceptions.py \
             --audit frontend/audit.json \
             --exceptions .github/audit-exceptions.yml
+
+  # gitleaks CLI direct (no GitHub API calls). gitleaks-action@v2 needed
+  # GHAS / pull-requests:write to post review comments + upload SARIF;
+  # neither is available on a private repo without GHAS, so we run the
+  # binary and fail the job on findings.
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.24.3
+        run: |
+          curl -sSLf -o /tmp/gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf /tmp/gitleaks.tar.gz -C /usr/local/bin gitleaks
+          gitleaks version
+      - name: Run gitleaks
+        run: |
+          gitleaks detect --source . --redact --verbose --no-banner --exit-code 1
+
+  # Go SAST (gosec) — replaces the Go portion of CodeQL on private repos
+  # without GHAS. Runs locally, fails on findings, no SARIF upload.
+  go-sast:
+    name: Go SAST (gosec)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Set up Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+      - name: Install gosec
+        env:
+          # Pre-built binary avoids `go install`-from-source compile failures
+          # under newer Go toolchains pulling stale golang.org/x/tools.
+          GOSEC_VERSION: 2.21.4
+        run: |
+          curl -sSLf -o /tmp/gosec.tar.gz \
+            "https://github.com/securego/gosec/releases/download/v${GOSEC_VERSION}/gosec_${GOSEC_VERSION}_linux_amd64.tar.gz"
+          tar -xzf /tmp/gosec.tar.gz -C /usr/local/bin gosec
+          gosec --version
+      - name: Run gosec
+        working-directory: backend
+        run: |
+          # Severity HIGH + confidence HIGH = strictest filter, gosec's
+          # equivalent of semgrep --severity ERROR. Drops audit-level
+          # noise (G115 overflow, G404 math/rand, G201/G202 SQL string
+          # ops, G304 path traversal hints, G301/G302/G306 file perms)
+          # which are pre-existing tech debt requiring per-call review.
+          #
+          # G407 (hardcoded IV/nonce) excluded due to a known gosec FP
+          # at backend/internal/repository/aes_encryptor.go:98 — the
+          # nonce arg there is dynamically extracted from the ciphertext
+          # prefix (line 95: `nonce, _ := data[:nonceSize], ...`), not
+          # hardcoded. gosec's pattern matcher misreads it.
+          gosec -severity high -confidence high -exclude=G407 -exclude-dir=vendor ./...
+
+  # Multi-language SAST (Semgrep) — replaces the JS/TS portion of CodeQL.
+  # Uses public rule packs; no Semgrep AppSec account or token needed.
+  semgrep:
+    name: Semgrep SAST
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: semgrep/semgrep:1.95.0
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Run Semgrep
+        run: |
+          # --severity ERROR filters to high-severity rules only, blocking
+          # real RCE/injection/auth-bypass classes while skipping audit-level
+          # warnings (math/rand suggestion, decompression-bomb hint on
+          # already-bounded readers, "consider parameterized SQL" on calls
+          # that can't bind parameters, etc.) which require per-call review
+          # and shouldn't gate every PR.
+          # Exclusions cover known false positives at any severity.
+          semgrep scan \
+            --config p/security-audit \
+            --config p/owasp-top-ten \
+            --config p/secrets \
+            --severity ERROR \
+            --exclude-rule generic.secrets.security.detected-google-gcm-service-account.detected-google-gcm-service-account \
+            --exclude-rule dockerfile.security.missing-user-entrypoint.missing-user-entrypoint \
+            --exclude-rule dockerfile.security.missing-user.missing-user \
+            --error \
+            --metrics=off

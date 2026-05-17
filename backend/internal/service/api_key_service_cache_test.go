@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/redis/go-redis/v9"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -269,6 +269,121 @@ func TestAPIKeyService_SnapshotRoundTrip_PreservesMessagesDispatchModelConfig(t 
 	require.NotNil(t, roundTrip)
 	require.NotNil(t, roundTrip.Group)
 	require.Equal(t, apiKey.Group.MessagesDispatchModelConfig, roundTrip.Group.MessagesDispatchModelConfig)
+}
+
+// stubGroupRepoAccountPlatforms satisfies GroupRepository for AccountPlatforms snapshot tests.
+// Returns a configurable []string per-groupID; other methods panic if called.
+type stubGroupRepoAccountPlatforms struct {
+	groupRepoNoop
+	platforms map[int64][]string
+	err       error
+}
+
+func (s *stubGroupRepoAccountPlatforms) GetAccountPlatforms(_ context.Context, groupID int64) ([]string, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.platforms[groupID], nil
+}
+
+func TestAPIKeyService_SnapshotFromAPIKey_PopulatesAccountPlatforms_MultiPlatform(t *testing.T) {
+	groupID := int64(9)
+	groupRepo := &stubGroupRepoAccountPlatforms{
+		platforms: map[int64][]string{groupID: {PlatformOpenAI, PlatformAnthropic}},
+	}
+	svc := NewAPIKeyService(nil, nil, groupRepo, nil, nil, nil, &config.Config{})
+
+	apiKey := &APIKey{
+		ID: 1, UserID: 2, GroupID: &groupID, Key: "k", Status: StatusActive,
+		User:  &User{ID: 2, Status: StatusActive},
+		Group: &Group{ID: groupID, Platform: PlatformOpenAI, Status: StatusActive},
+	}
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot.Group)
+	require.ElementsMatch(t, []string{PlatformOpenAI, PlatformAnthropic}, snapshot.Group.AccountPlatforms)
+}
+
+func TestAPIKeyService_SnapshotFromAPIKey_ZeroAccounts_NonNilEmptySlice(t *testing.T) {
+	groupID := int64(9)
+	// Repo returns nil (e.g., zero rows). Writer enforces non-nil empty slice contract.
+	groupRepo := &stubGroupRepoAccountPlatforms{
+		platforms: map[int64][]string{groupID: nil},
+	}
+	svc := NewAPIKeyService(nil, nil, groupRepo, nil, nil, nil, &config.Config{})
+
+	apiKey := &APIKey{
+		ID: 1, UserID: 2, GroupID: &groupID, Key: "k", Status: StatusActive,
+		User:  &User{ID: 2, Status: StatusActive},
+		Group: &Group{ID: groupID, Platform: PlatformOpenAI, Status: StatusActive},
+	}
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	require.NotNil(t, snapshot.Group.AccountPlatforms, "writer must enforce non-nil empty slice for zero-account case")
+	require.Empty(t, snapshot.Group.AccountPlatforms)
+}
+
+func TestAPIKeyService_SnapshotFromAPIKey_RepoError_LeavesNilForLegacyFallback(t *testing.T) {
+	groupID := int64(9)
+	groupRepo := &stubGroupRepoAccountPlatforms{err: errors.New("transient db error")}
+	svc := NewAPIKeyService(nil, nil, groupRepo, nil, nil, nil, &config.Config{})
+
+	apiKey := &APIKey{
+		ID: 1, UserID: 2, GroupID: &groupID, Key: "k", Status: StatusActive,
+		User:  &User{ID: 2, Status: StatusActive},
+		Group: &Group{ID: groupID, Platform: PlatformOpenAI, Status: StatusActive},
+	}
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	// On error, writer leaves nil — readers fall back to [Group.Platform] via service.GroupAccountPlatforms.
+	require.Nil(t, snapshot.Group.AccountPlatforms)
+}
+
+func TestAPIKeyService_SnapshotRoundTrip_PreservesAccountPlatforms_Populated(t *testing.T) {
+	groupID := int64(9)
+	groupRepo := &stubGroupRepoAccountPlatforms{
+		platforms: map[int64][]string{groupID: {PlatformOpenAI, PlatformAnthropic}},
+	}
+	svc := NewAPIKeyService(nil, nil, groupRepo, nil, nil, nil, &config.Config{})
+
+	apiKey := &APIKey{
+		ID: 1, UserID: 2, GroupID: &groupID, Key: "k", Status: StatusActive,
+		User:  &User{ID: 2, Status: StatusActive},
+		Group: &Group{ID: groupID, Platform: PlatformOpenAI, Status: StatusActive},
+	}
+	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
+	roundTrip := svc.snapshotToAPIKey(apiKey.Key, snapshot)
+
+	require.NotNil(t, roundTrip.Group)
+	require.ElementsMatch(t, []string{PlatformOpenAI, PlatformAnthropic}, roundTrip.Group.AccountPlatforms)
+}
+
+func TestAPIKeyService_SnapshotRoundTrip_PreservesAccountPlatforms_NilDistinguishedFromEmpty(t *testing.T) {
+	svc := NewAPIKeyService(nil, nil, nil, nil, nil, nil, &config.Config{})
+
+	// Legacy snapshot: AccountPlatforms == nil (writer didn't populate, e.g., pre-deploy cached entry).
+	// Reader must preserve nil so service.GroupAccountPlatforms helper falls back to [Group.Platform].
+	groupID := int64(9)
+	snapshotNil := &APIKeyAuthSnapshot{
+		APIKeyID: 1, UserID: 2, GroupID: &groupID, Status: StatusActive,
+		User: APIKeyAuthUserSnapshot{ID: 2, Status: StatusActive},
+		Group: &APIKeyAuthGroupSnapshot{
+			ID: groupID, Platform: PlatformOpenAI, Status: StatusActive,
+			// AccountPlatforms intentionally not set
+		},
+	}
+	apiKey := svc.snapshotToAPIKey("k", snapshotNil)
+	require.Nil(t, apiKey.Group.AccountPlatforms, "nil must round-trip as nil (legacy snapshot)")
+
+	// Empty: explicitly queried, found 0 accounts. Reader preserves empty slice.
+	snapshotEmpty := &APIKeyAuthSnapshot{
+		APIKeyID: 1, UserID: 2, GroupID: &groupID, Status: StatusActive,
+		User: APIKeyAuthUserSnapshot{ID: 2, Status: StatusActive},
+		Group: &APIKeyAuthGroupSnapshot{
+			ID: groupID, Platform: PlatformOpenAI, Status: StatusActive,
+			AccountPlatforms: []string{},
+		},
+	}
+	apiKey = svc.snapshotToAPIKey("k", snapshotEmpty)
+	require.NotNil(t, apiKey.Group.AccountPlatforms, "empty slice must round-trip as non-nil")
+	require.Empty(t, apiKey.Group.AccountPlatforms)
 }
 
 func TestAPIKeyService_GetByKey_IgnoresLegacyAuthCacheSnapshotWithoutMessagesDispatchConfig(t *testing.T) {

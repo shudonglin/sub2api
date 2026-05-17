@@ -8,9 +8,11 @@ import './style.css'
 
 function initThemeClass() {
   const savedTheme = localStorage.getItem('theme')
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
   const shouldUseDark =
     savedTheme === 'dark' ||
-    (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)
+    (savedTheme === 'system' && prefersDark) ||
+    (!savedTheme && prefersDark)
   document.documentElement.classList.toggle('dark', shouldUseDark)
 }
 
@@ -28,7 +30,7 @@ async function bootstrap() {
   appStore.initFromInjectedConfig()
 
   // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'Sub2API') {
+  if (appStore.siteName && appStore.siteName !== 'KuaiAPI') {
     document.title = `${appStore.siteName} - AI API Gateway`
   }
 

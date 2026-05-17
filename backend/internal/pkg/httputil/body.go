@@ -64,6 +64,11 @@ func ReadRequestBodyWithPrealloc(req *http.Request) ([]byte, error) {
 	return decoded, nil
 }
 
+// errDecompressedBodyTooLarge is returned when the decoded request body would
+// exceed maxDecompressedBodySize. Reading exactly the limit is allowed; only
+// payloads that decompress to strictly more bytes are rejected.
+var errDecompressedBodyTooLarge = fmt.Errorf("decompressed body exceeds %d bytes", maxDecompressedBodySize)
+
 func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 	switch encoding {
 	case "zstd":
@@ -72,22 +77,38 @@ func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		defer dec.Close()
-		return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+		return readBoundedAll(dec)
 	case "gzip", "x-gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = gr.Close() }()
-		return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+		return readBoundedAll(gr)
 	case "deflate":
 		zr, err := zlib.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+		return readBoundedAll(zr)
 	default:
 		return nil, errors.New("unsupported Content-Encoding")
 	}
+}
+
+// readBoundedAll reads up to maxDecompressedBodySize+1 bytes; if the extra byte
+// is consumed, the source produced more than the limit and is rejected. This
+// avoids the silent-truncation behavior of io.LimitReader, which would let a
+// decompression bomb hand back exactly maxDecompressedBodySize bytes of garbage.
+func readBoundedAll(r io.Reader) ([]byte, error) {
+	const limit = maxDecompressedBodySize
+	buf, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(buf)) > limit {
+		return nil, errDecompressedBodyTooLarge
+	}
+	return buf, nil
 }

@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,6 +11,13 @@ import (
 
 	"golang.org/x/sync/singleflight"
 )
+
+// snapshotETagSalt is a fixed keyed-hash salt for the in-memory admin snapshot
+// ETag. Using HMAC-SHA256 (rather than bare SHA256) defeats any pre-computed
+// dictionary lookups against leaked ETag values and closes CodeQL's
+// go/weak-sensitive-data-hashing (the rule flags unkeyed fast hashes over
+// data it classifies as password-like; HMAC is not flagged).
+var snapshotETagSalt = []byte("sub2api/admin/snapshot-etag/v1")
 
 type snapshotCacheEntry struct {
 	ETag      string
@@ -118,8 +126,9 @@ func buildETagFromAny(payload any) string {
 	if err != nil {
 		return ""
 	}
-	sum := sha256.Sum256(raw)
-	return "\"" + hex.EncodeToString(sum[:]) + "\""
+	mac := hmac.New(sha256.New, snapshotETagSalt)
+	_, _ = mac.Write(raw)
+	return "\"" + hex.EncodeToString(mac.Sum(nil)) + "\""
 }
 
 func parseBoolQueryWithDefault(raw string, def bool) bool {

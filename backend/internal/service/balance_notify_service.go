@@ -374,11 +374,6 @@ func (s *BalanceNotifyService) sendQuotaAlertEmails(adminEmails []string, accoun
 	s.sendEmails(adminEmails, subject, body, "account", accountName, "dimension", dim.name)
 }
 
-// sanitizeEmailHeader removes CR/LF characters to prevent SMTP header injection.
-func sanitizeEmailHeader(s string) string {
-	return strings.NewReplacer("\r", "", "\n", "").Replace(s)
-}
-
 // balanceLowEmailTemplate is the HTML template for balance low notifications.
 // Format args: siteName, userName, userName, balance, threshold, threshold.
 // The recharge button is appended dynamically when rechargeURL is set.

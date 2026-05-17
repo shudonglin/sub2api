@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	coderws "github.com/coder/websocket"
+	"github.com/shudonglin/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
 

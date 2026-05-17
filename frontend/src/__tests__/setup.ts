@@ -20,15 +20,26 @@ if (typeof globalThis.cancelIdleCallback === 'undefined') {
 
 // Mock IntersectionObserver
 class MockIntersectionObserver {
+  constructor(
+    _callback?: IntersectionObserverCallback,
+    _options?: IntersectionObserverInit,
+  ) {
+    void _callback
+    void _options
+  }
   observe = vi.fn()
   disconnect = vi.fn()
   unobserve = vi.fn()
+  takeRecords = vi.fn(() => [])
 }
 
 globalThis.IntersectionObserver = MockIntersectionObserver as unknown as typeof IntersectionObserver
 
 // Mock ResizeObserver
 class MockResizeObserver {
+  constructor(_callback?: ResizeObserverCallback) {
+    void _callback
+  }
   observe = vi.fn()
   disconnect = vi.fn()
   unobserve = vi.fn()

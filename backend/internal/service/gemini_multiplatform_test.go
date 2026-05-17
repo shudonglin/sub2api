@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -211,6 +211,12 @@ func (m *mockGroupRepoForGemini) GetByIDLite(ctx context.Context, id int64) (*Gr
 }
 
 // Stub methods to implement GroupRepository interface
+func (m *mockGroupRepoForGemini) GetAccountPlatforms(ctx context.Context, groupID int64) ([]string, error) {
+	if g, ok := m.groups[groupID]; ok && g.AccountPlatforms != nil {
+		return g.AccountPlatforms, nil
+	}
+	return []string{}, nil
+}
 func (m *mockGroupRepoForGemini) Create(ctx context.Context, group *Group) error { return nil }
 func (m *mockGroupRepoForGemini) Update(ctx context.Context, group *Group) error { return nil }
 func (m *mockGroupRepoForGemini) Delete(ctx context.Context, id int64) error     { return nil }

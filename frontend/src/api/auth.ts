@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { getStoredRefreshToken, setStoredRefreshToken } from './refreshTokenStore'
 import type {
   LoginRequest,
   RegisterRequest,
@@ -28,6 +29,10 @@ export function isTotp2FARequired(response: LoginResponse): response is TotpLogi
   return 'requires_2fa' in response && response.requires_2fa === true
 }
 
+// Refresh token is held in process memory only via refreshTokenStore;
+// short-lived access tokens still live in localStorage so other open
+// tabs can keep their session alive across navigations.
+
 /**
  * Store authentication token in localStorage
  */
@@ -36,10 +41,10 @@ export function setAuthToken(token: string): void {
 }
 
 /**
- * Store refresh token in localStorage
+ * Store refresh token in process memory (cleared on reload).
  */
 export function setRefreshToken(token: string): void {
-  localStorage.setItem('refresh_token', token)
+  setStoredRefreshToken(token)
 }
 
 /**
@@ -59,10 +64,11 @@ export function getAuthToken(): string | null {
 }
 
 /**
- * Get refresh token from localStorage
+ * Get the in-memory refresh token. Returns null after a page reload
+ * (the access token in localStorage may still be valid until expiry).
  */
 export function getRefreshToken(): string | null {
-  return localStorage.getItem('refresh_token')
+  return getStoredRefreshToken()
 }
 
 /**
@@ -74,11 +80,11 @@ export function getTokenExpiresAt(): number | null {
 }
 
 /**
- * Clear authentication token from localStorage
+ * Clear in-memory refresh token plus all auth-related localStorage entries.
  */
 export function clearAuthToken(): void {
   localStorage.removeItem('auth_token')
-  localStorage.removeItem('refresh_token')
+  setStoredRefreshToken(null)
   localStorage.removeItem('auth_user')
   localStorage.removeItem('token_expires_at')
 }

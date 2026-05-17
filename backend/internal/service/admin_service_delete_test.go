@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -223,6 +223,10 @@ func (s *groupRepoStub) ExistsByName(ctx context.Context, name string) (bool, er
 
 func (s *groupRepoStub) GetAccountCount(ctx context.Context, groupID int64) (int64, int64, error) {
 	panic("unexpected GetAccountCount call")
+}
+
+func (s *groupRepoStub) GetAccountPlatforms(ctx context.Context, groupID int64) ([]string, error) {
+	panic("unexpected GetAccountPlatforms call")
 }
 
 func (s *groupRepoStub) DeleteAccountGroupsByGroupID(ctx context.Context, groupID int64) (int64, error) {

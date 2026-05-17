@@ -252,7 +252,7 @@ docker compose logs -f sub2api
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/shudonglin/sub2api.git
 cd sub2api/deploy
 
 # 2. 复制环境配置文件
@@ -403,7 +403,7 @@ rm -rf data/ postgres_data/ redis_data/
 
 ```bash
 # 1. 克隆仓库
-git clone https://github.com/Wei-Shaw/sub2api.git
+git clone https://github.com/shudonglin/sub2api.git
 cd sub2api
 
 # 2. 安装 pnpm（如果还没有安装）

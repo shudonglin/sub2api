@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 )
 
 var (
@@ -126,6 +126,9 @@ type UpdateAccountRequest struct {
 type AccountService struct {
 	accountRepo AccountRepository
 	groupRepo   GroupRepository
+	// authCache 在账号-分组绑定关系发生变化时，失效相关 API Key 的认证缓存，
+	// 确保 APIKeyAuthGroupSnapshot 中冗余的 AccountPlatforms 在 TTL 内同步更新。
+	authCache APIKeyAuthCacheInvalidator
 }
 
 type groupExistenceBatchChecker interface {
@@ -133,10 +136,11 @@ type groupExistenceBatchChecker interface {
 }
 
 // NewAccountService 创建账号服务实例
-func NewAccountService(accountRepo AccountRepository, groupRepo GroupRepository) *AccountService {
+func NewAccountService(accountRepo AccountRepository, groupRepo GroupRepository, authCache APIKeyAuthCacheInvalidator) *AccountService {
 	return &AccountService{
 		accountRepo: accountRepo,
 		groupRepo:   groupRepo,
+		authCache:   authCache,
 	}
 }
 
@@ -191,6 +195,8 @@ func (s *AccountService) Create(ctx context.Context, req CreateAccountRequest) (
 		if err := s.accountRepo.BindGroups(ctx, account.ID, req.GroupIDs); err != nil {
 			return nil, fmt.Errorf("bind groups: %w", err)
 		}
+		// 新分组中冗余的 AccountPlatforms 集合会因新成员加入而变化，失效缓存以触发下次请求重建。
+		s.invalidateAuthCacheForGroups(ctx, req.GroupIDs)
 	}
 
 	return account, nil
@@ -304,9 +310,13 @@ func (s *AccountService) Update(ctx context.Context, id int64, req UpdateAccount
 
 	// 绑定分组
 	if req.GroupIDs != nil {
+		// 在写入新绑定之前先记录旧绑定，用于后续失效。
+		oldGroupIDs := append([]int64{}, account.GroupIDs...)
 		if err := s.accountRepo.BindGroups(ctx, account.ID, *req.GroupIDs); err != nil {
 			return nil, fmt.Errorf("bind groups: %w", err)
 		}
+		// 失效新旧分组并集：成员离开旧分组、加入新分组都会改变各自的 AccountPlatforms 集合。
+		s.invalidateAuthCacheForGroups(ctx, mergeGroupIDsUnion(oldGroupIDs, *req.GroupIDs))
 	}
 
 	return account, nil
@@ -364,6 +374,49 @@ func (s *AccountService) validateGroupIDsExist(ctx context.Context, groupIDs []i
 		}
 	}
 	return nil
+}
+
+// invalidateAuthCacheForGroups 对一组分组依次触发 API Key 认证缓存失效。
+// 失效操作本身不返回错误（接口契约），失败由 APIKeyService 内部静默处理；
+// 此处仅做 nil-guard，避免无 invalidator 时 panic。
+func (s *AccountService) invalidateAuthCacheForGroups(ctx context.Context, groupIDs []int64) {
+	if s.authCache == nil || len(groupIDs) == 0 {
+		return
+	}
+	for _, gid := range groupIDs {
+		if gid <= 0 {
+			continue
+		}
+		s.authCache.InvalidateAuthCacheByGroupID(ctx, gid)
+	}
+}
+
+// mergeGroupIDsUnion 返回 a 与 b 的去重并集，跳过非正数 ID。
+// 顺序：先 a 后 b，便于测试断言（与 repository.mergeGroupIDs 行为一致）。
+func mergeGroupIDsUnion(a []int64, b []int64) []int64 {
+	seen := make(map[int64]struct{}, len(a)+len(b))
+	out := make([]int64, 0, len(a)+len(b))
+	for _, id := range a {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	for _, id := range b {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // UpdateStatus 更新账号状态

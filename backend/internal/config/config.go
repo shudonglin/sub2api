@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -521,6 +522,11 @@ type SecurityConfig struct {
 	CSP             CSPConfig            `mapstructure:"csp"`
 	ProxyFallback   ProxyFallbackConfig  `mapstructure:"proxy_fallback"`
 	ProxyProbe      ProxyProbeConfig     `mapstructure:"proxy_probe"`
+	// CredentialEncryptionKey is a hex-encoded 32-byte AES-256 key used to
+	// encrypt provider credentials (API keys, OAuth tokens) at rest in the
+	// database. If empty, credentials are stored in plaintext (legacy mode).
+	// Generate with: openssl rand -hex 32
+	CredentialEncryptionKey string `mapstructure:"credential_encryption_key"`
 }
 
 type URLAllowlistConfig struct {
@@ -575,6 +581,24 @@ type ConcurrencyConfig struct {
 	PingInterval int `mapstructure:"ping_interval"`
 }
 
+type ImageConcurrencyConfig struct {
+	// Enabled: 是否启用图片生成独立并发限制，默认关闭以保持现有行为
+	Enabled bool `mapstructure:"enabled"`
+	// MaxConcurrentRequests: 当前进程允许同时处理的图片生成请求数，0表示不限制
+	MaxConcurrentRequests int `mapstructure:"max_concurrent_requests"`
+	// OverflowMode: 图片并发达到上限后的处理方式：reject/wait
+	OverflowMode string `mapstructure:"overflow_mode"`
+	// WaitTimeoutSeconds: overflow_mode=wait 时等待图片并发槽位的超时时间（秒）
+	WaitTimeoutSeconds int `mapstructure:"wait_timeout_seconds"`
+	// MaxWaitingRequests: overflow_mode=wait 时当前进程允许排队等待的图片请求数
+	MaxWaitingRequests int `mapstructure:"max_waiting_requests"`
+}
+
+const (
+	ImageConcurrencyOverflowModeReject = "reject"
+	ImageConcurrencyOverflowModeWait   = "wait"
+)
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -604,6 +628,8 @@ type GatewayConfig struct {
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
+	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
+	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -635,6 +661,10 @@ type GatewayConfig struct {
 	StreamDataIntervalTimeout int `mapstructure:"stream_data_interval_timeout"`
 	// StreamKeepaliveInterval: 流式 keepalive 间隔（秒），0表示禁用
 	StreamKeepaliveInterval int `mapstructure:"stream_keepalive_interval"`
+	// ImageStreamDataIntervalTimeout: 图片流数据间隔超时（秒），0表示禁用
+	ImageStreamDataIntervalTimeout int `mapstructure:"image_stream_data_interval_timeout"`
+	// ImageStreamKeepaliveInterval: 图片流式 keepalive 间隔（秒），0表示禁用
+	ImageStreamKeepaliveInterval int `mapstructure:"image_stream_keepalive_interval"`
 	// MaxLineSize: 上游 SSE 单行最大字节数（0使用默认值）
 	MaxLineSize int `mapstructure:"max_line_size"`
 
@@ -940,6 +970,10 @@ func (s *ServerConfig) Address() string {
 // DatabaseConfig 数据库连接配置
 // 性能优化：新增连接池参数，避免频繁创建/销毁连接
 type DatabaseConfig struct {
+	// URL: 完整的 PostgreSQL 连接字符串（postgres:// 或 postgresql://）。
+	// 设置后优先于 Host/Port/User/Password/DBName/SSLMode 字段；
+	// 连接池参数（MaxOpenConns 等）仍可通过独立环境变量覆盖。
+	URL      string `mapstructure:"url"`
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	User     string `mapstructure:"user"`
@@ -987,6 +1021,105 @@ func (d *DatabaseConfig) DSNWithTimezone(tz string) string {
 		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
 		d.Host, d.Port, d.User, d.Password, d.DBName, d.SSLMode, tz,
 	)
+}
+
+// ParseDatabaseURL parses a postgres:// or postgresql:// connection URL into
+// a partially-filled DatabaseConfig. Callers can overlay individual env vars
+// (e.g. DATABASE_MAX_OPEN_CONNS) on top of the returned struct.
+//
+// Edge-case handling:
+//   - Port defaults to 5432 when omitted.
+//   - SSLMode defaults to "require" (hosted DBs need SSL).
+//   - Pool defaults are tuned for hosted DBs: max_open=20, max_idle=10.
+func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("malformed DATABASE_URL: %w", err)
+	}
+	if u.Scheme != "postgres" && u.Scheme != "postgresql" {
+		return nil, fmt.Errorf("DATABASE_URL scheme must be postgres:// or postgresql://, got %q", u.Scheme)
+	}
+
+	cfg := &DatabaseConfig{}
+
+	// Host (strip port if present)
+	cfg.Host = u.Hostname()
+	if cfg.Host == "" {
+		return nil, fmt.Errorf("DATABASE_URL missing host")
+	}
+
+	// Port – default 5432
+	portStr := u.Port()
+	if portStr == "" {
+		cfg.Port = 5432
+	} else {
+		p, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("DATABASE_URL invalid port %q: %w", portStr, err)
+		}
+		cfg.Port = p
+	}
+
+	// User / Password
+	if u.User != nil {
+		cfg.User = u.User.Username()
+		cfg.Password, _ = u.User.Password()
+	}
+
+	// Database name from path (strip leading '/')
+	cfg.DBName = strings.TrimPrefix(u.Path, "/")
+	if cfg.DBName == "" {
+		cfg.DBName = "postgres"
+	}
+
+	// SSLMode from query params; default "require" for hosted DBs
+	cfg.SSLMode = u.Query().Get("sslmode")
+	if cfg.SSLMode == "" {
+		cfg.SSLMode = "require"
+	}
+
+	// Hosted DB pool defaults (smaller than local defaults)
+	cfg.MaxOpenConns = 20
+	cfg.MaxIdleConns = 10
+	cfg.ConnMaxLifetimeMinutes = 30
+	cfg.ConnMaxIdleTimeMinutes = 5
+
+	return cfg, nil
+}
+
+// ApplyURL parses DatabaseConfig.URL (if non-empty) and overwrites the
+// individual connection fields. Pool parameters are only replaced when
+// they haven't been explicitly set to a non-default value.
+func (d *DatabaseConfig) ApplyURL() error {
+	if d.URL == "" {
+		return nil
+	}
+	parsed, err := ParseDatabaseURL(d.URL)
+	if err != nil {
+		return err
+	}
+	d.Host = parsed.Host
+	d.Port = parsed.Port
+	d.User = parsed.User
+	d.Password = parsed.Password
+	d.DBName = parsed.DBName
+	d.SSLMode = parsed.SSLMode
+
+	// Only apply hosted-DB pool defaults when the caller hasn't set them
+	// explicitly (i.e. they still carry the viper defaults for local DB).
+	const (
+		localDefaultMaxOpen = 256
+		localDefaultMaxIdle = 128
+	)
+	if d.MaxOpenConns == localDefaultMaxOpen {
+		d.MaxOpenConns = parsed.MaxOpenConns
+	}
+	if d.MaxIdleConns == localDefaultMaxIdle {
+		d.MaxIdleConns = parsed.MaxIdleConns
+	}
+
+	slog.Info("DATABASE_URL detected; using hosted DB pool defaults (max_open=20, max_idle=10). Override with DATABASE_MAX_OPEN_CONNS / DATABASE_MAX_IDLE_CONNS.")
+	return nil
 }
 
 // RedisConfig Redis 连接配置
@@ -1234,6 +1367,12 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		return nil, fmt.Errorf("unmarshal config error: %w", err)
 	}
 
+	// When DATABASE_URL is set, parse it and overwrite individual DB fields.
+	// Pool parameters keep their explicit overrides (if any).
+	if err := cfg.Database.ApplyURL(); err != nil {
+		return nil, fmt.Errorf("apply DATABASE_URL error: %w", err)
+	}
+
 	cfg.RunMode = NormalizeRunMode(cfg.RunMode)
 	cfg.Server.Mode = strings.ToLower(strings.TrimSpace(cfg.Server.Mode))
 	if cfg.Server.Mode == "" {
@@ -1337,7 +1476,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	}
 
 	if !cfg.Security.URLAllowlist.Enabled {
-		slog.Warn("security.url_allowlist.enabled=false; allowlist/SSRF checks disabled (minimal format validation only).")
+		slog.Warn("security.url_allowlist.enabled=false overridden; allowlist/SSRF checks disabled (minimal format validation only).")
 	}
 	if !cfg.Security.ResponseHeaders.Enabled {
 		slog.Warn("security.response_headers.enabled=false; configurable header filtering disabled (default allowlist only).")
@@ -1400,7 +1539,7 @@ func setDefaults() {
 	viper.SetDefault("cors.allow_credentials", true)
 
 	// Security
-	viper.SetDefault("security.url_allowlist.enabled", false)
+	viper.SetDefault("security.url_allowlist.enabled", true)
 	viper.SetDefault("security.url_allowlist.upstream_hosts", []string{
 		"api.openai.com",
 		"api.anthropic.com",
@@ -1415,8 +1554,8 @@ func setDefaults() {
 		"raw.githubusercontent.com",
 	})
 	viper.SetDefault("security.url_allowlist.crs_hosts", []string{})
-	viper.SetDefault("security.url_allowlist.allow_private_hosts", true)
-	viper.SetDefault("security.url_allowlist.allow_insecure_http", true)
+	viper.SetDefault("security.url_allowlist.allow_private_hosts", false)
+	viper.SetDefault("security.url_allowlist.allow_insecure_http", false)
 	viper.SetDefault("security.response_headers.enabled", true)
 	viper.SetDefault("security.response_headers.additional_allowed", []string{})
 	viper.SetDefault("security.response_headers.force_remove", []string{})
@@ -1426,6 +1565,9 @@ func setDefaults() {
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
+
+	// Security - credential encryption key (empty = plaintext, set hex-encoded 32 bytes for AES-256-GCM)
+	viper.SetDefault("security.credential_encryption_key", "")
 
 	// Billing
 	viper.SetDefault("billing.circuit_breaker.enabled", true)
@@ -1495,12 +1637,13 @@ func setDefaults() {
 	viper.SetDefault("oidc_connect.userinfo_username_path", "")
 
 	// Database
+	viper.SetDefault("database.url", "")
 	viper.SetDefault("database.host", "localhost")
 	viper.SetDefault("database.port", 5432)
 	viper.SetDefault("database.user", "postgres")
 	viper.SetDefault("database.password", "postgres")
 	viper.SetDefault("database.dbname", "sub2api")
-	viper.SetDefault("database.sslmode", "prefer")
+	viper.SetDefault("database.sslmode", "disable") // lib/pq doesn't support "prefer"; use "require" for external DB
 	viper.SetDefault("database.max_open_conns", 256)
 	viper.SetDefault("database.max_idle_conns", 128)
 	viper.SetDefault("database.conn_max_lifetime_minutes", 30)
@@ -1672,6 +1815,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.queue", 0.7)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.error_rate", 0.8)
 	viper.SetDefault("gateway.openai_ws.scheduler_score_weights.ttft", 0.5)
+	viper.SetDefault("gateway.image_concurrency.enabled", false)
+	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
+	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
+	viper.SetDefault("gateway.image_concurrency.wait_timeout_seconds", 30)
+	viper.SetDefault("gateway.image_concurrency.max_waiting_requests", 100)
 	viper.SetDefault("gateway.antigravity_fallback_cooldown_minutes", 1)
 	viper.SetDefault("gateway.antigravity_extra_retries", 10)
 	viper.SetDefault("gateway.max_body_size", int64(256*1024*1024))
@@ -1689,6 +1837,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.concurrency_slot_ttl_minutes", 30) // 并发槽位过期时间（支持超长请求）
 	viper.SetDefault("gateway.stream_data_interval_timeout", 180)
 	viper.SetDefault("gateway.stream_keepalive_interval", 10)
+	viper.SetDefault("gateway.image_stream_data_interval_timeout", 900)
+	viper.SetDefault("gateway.image_stream_keepalive_interval", 10)
 	viper.SetDefault("gateway.max_line_size", 500*1024*1024)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
@@ -2239,6 +2389,21 @@ func (c *Config) Validate() error {
 				ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy)
 		}
 	}
+	if c.Gateway.ImageConcurrency.MaxConcurrentRequests < 0 {
+		return fmt.Errorf("gateway.image_concurrency.max_concurrent_requests must be non-negative")
+	}
+	switch strings.TrimSpace(c.Gateway.ImageConcurrency.OverflowMode) {
+	case "", ImageConcurrencyOverflowModeReject, ImageConcurrencyOverflowModeWait:
+	default:
+		return fmt.Errorf("gateway.image_concurrency.overflow_mode must be one of: %s/%s",
+			ImageConcurrencyOverflowModeReject, ImageConcurrencyOverflowModeWait)
+	}
+	if c.Gateway.ImageConcurrency.WaitTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.image_concurrency.wait_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.ImageConcurrency.MaxWaitingRequests < 0 {
+		return fmt.Errorf("gateway.image_concurrency.max_waiting_requests must be non-negative")
+	}
 	if c.Gateway.MaxIdleConns <= 0 {
 		return fmt.Errorf("gateway.max_idle_conns must be positive")
 	}
@@ -2276,6 +2441,20 @@ func (c *Config) Validate() error {
 	if c.Gateway.StreamKeepaliveInterval != 0 &&
 		(c.Gateway.StreamKeepaliveInterval < 5 || c.Gateway.StreamKeepaliveInterval > 30) {
 		return fmt.Errorf("gateway.stream_keepalive_interval must be 0 or between 5-30 seconds")
+	}
+	if c.Gateway.ImageStreamDataIntervalTimeout < 0 {
+		return fmt.Errorf("gateway.image_stream_data_interval_timeout must be non-negative")
+	}
+	if c.Gateway.ImageStreamDataIntervalTimeout != 0 &&
+		(c.Gateway.ImageStreamDataIntervalTimeout < 60 || c.Gateway.ImageStreamDataIntervalTimeout > 1800) {
+		return fmt.Errorf("gateway.image_stream_data_interval_timeout must be 0 or between 60-1800 seconds")
+	}
+	if c.Gateway.ImageStreamKeepaliveInterval < 0 {
+		return fmt.Errorf("gateway.image_stream_keepalive_interval must be non-negative")
+	}
+	if c.Gateway.ImageStreamKeepaliveInterval != 0 &&
+		(c.Gateway.ImageStreamKeepaliveInterval < 5 || c.Gateway.ImageStreamKeepaliveInterval > 60) {
+		return fmt.Errorf("gateway.image_stream_keepalive_interval must be 0 or between 5-60 seconds")
 	}
 	// 兼容旧键 sticky_previous_response_ttl_seconds
 	if c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds <= 0 && c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds > 0 {

@@ -2,25 +2,27 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/authidentity"
-	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
-	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/util/httputil"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/authidentity"
+	"github.com/shudonglin/sub2api/ent/authidentitychannel"
+	infraerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/httpclient"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/util/httputil"
 )
 
 // AdminService interface defines admin management operations
@@ -188,11 +190,14 @@ type CreateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  bool   // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	AllowImageGeneration bool
+	ImageRateIndependent bool
+	ImageRateMultiplier  *float64
+	ImagePrice1K         *float64
+	ImagePrice2K         *float64
+	ImagePrice4K         *float64
+	ClaudeCodeOnly       bool   // 仅允许 Claude Code 客户端
+	FallbackGroupID      *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -225,11 +230,14 @@ type UpdateGroupInput struct {
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
-	ImagePrice1K    *float64
-	ImagePrice2K    *float64
-	ImagePrice4K    *float64
-	ClaudeCodeOnly  *bool  // 仅允许 Claude Code 客户端
-	FallbackGroupID *int64 // 降级分组 ID
+	AllowImageGeneration *bool
+	ImageRateIndependent *bool
+	ImageRateMultiplier  *float64
+	ImagePrice1K         *float64
+	ImagePrice2K         *float64
+	ImagePrice4K         *float64
+	ClaudeCodeOnly       *bool  // 仅允许 Claude Code 客户端
+	FallbackGroupID      *int64 // 降级分组 ID
 	// 无效请求兜底分组 ID（仅 anthropic 平台使用）
 	FallbackGroupIDOnInvalidRequest *int64
 	// 模型路由配置（仅 anthropic 平台使用）
@@ -973,16 +981,213 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 // GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
+	if codeType == RedeemTypeAffiliateBalance {
+		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return codes, total, totalRecharged, nil
+	}
+
+	if codeType == "" {
+		return s.getAllUserBalanceHistory(ctx, userID, params)
+	}
+
 	codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, codeType)
 	if err != nil {
 		return nil, 0, 0, err
 	}
+	total := result.Total
 	// Aggregate total recharged amount (only once, regardless of type filter)
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, result.Total, totalRecharged, nil
+	return codes, total, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
+	needed := params.Offset() + params.Limit()
+	if needed < params.Limit() {
+		needed = params.Limit()
+	}
+
+	redeemCodes, redeemTotal, err := s.listRedeemBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	affiliateCodes, affiliateTotal, err := s.listAffiliateBalanceHistoryForMerge(ctx, userID, needed)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
+
+	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+}
+
+func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "")
+		if err != nil {
+			return nil, 0, err
+		}
+		if result != nil {
+			total = result.Total
+		}
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 {
+		return nil, 0, nil
+	}
+
+	var (
+		out   []RedeemCode
+		total int64
+	)
+	for page := 1; len(out) < needed; page++ {
+		params := pagination.PaginationParams{Page: page, PageSize: 1000}
+		codes, currentTotal, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		if err != nil {
+			return nil, 0, err
+		}
+		total = currentTotal
+		out = append(out, codes...)
+		if len(codes) < params.Limit() || int64(len(out)) >= total {
+			break
+		}
+	}
+	if len(out) > needed {
+		out = out[:needed]
+	}
+	return out, total, nil
+}
+
+func (s *adminServiceImpl) listAffiliateBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	if s == nil || s.entClient == nil || userID <= 0 {
+		return nil, 0, nil
+	}
+
+	rows, err := s.entClient.QueryContext(ctx, `
+SELECT id,
+       amount::double precision,
+       created_at
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'
+ORDER BY created_at DESC, id DESC
+OFFSET $2
+LIMIT $3`, userID, params.Offset(), params.Limit())
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	codes := make([]RedeemCode, 0, params.Limit())
+	for rows.Next() {
+		var id int64
+		var amount float64
+		var createdAt time.Time
+		if err := rows.Scan(&id, &amount, &createdAt); err != nil {
+			return nil, 0, err
+		}
+		usedBy := userID
+		usedAt := createdAt
+		codes = append(codes, RedeemCode{
+			ID:        -id,
+			Code:      fmt.Sprintf("AFF-%d", id),
+			Type:      RedeemTypeAffiliateBalance,
+			Value:     amount,
+			Status:    StatusUsed,
+			UsedBy:    &usedBy,
+			UsedAt:    &usedAt,
+			CreatedAt: createdAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+
+	total, err := countAffiliateBalanceHistory(ctx, s.entClient, userID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return codes, total, nil
+}
+
+func countAffiliateBalanceHistory(ctx context.Context, client *dbent.Client, userID int64) (int64, error) {
+	rows, err := client.QueryContext(ctx, `
+SELECT COUNT(*)
+FROM user_affiliate_ledger
+WHERE user_id = $1
+  AND action = 'transfer'`, userID)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var total sql.NullInt64
+	if rows.Next() {
+		if err := rows.Scan(&total); err != nil {
+			return 0, err
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	if !total.Valid {
+		return 0, nil
+	}
+	return total.Int64, nil
+}
+
+func mergeBalanceHistoryCodes(redeemCodes, affiliateCodes []RedeemCode, params pagination.PaginationParams) []RedeemCode {
+	combined := append(append([]RedeemCode{}, redeemCodes...), affiliateCodes...)
+	sort.SliceStable(combined, func(i, j int) bool {
+		return redeemCodeHistoryTime(combined[i]).After(redeemCodeHistoryTime(combined[j]))
+	})
+	offset := params.Offset()
+	if offset >= len(combined) {
+		return []RedeemCode{}
+	}
+	end := offset + params.Limit()
+	if end > len(combined) {
+		end = len(combined)
+	}
+	return combined[offset:end]
+}
+
+func redeemCodeHistoryTime(code RedeemCode) time.Time {
+	if code.UsedAt != nil {
+		return *code.UsedAt
+	}
+	return code.CreatedAt
 }
 
 func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int64, input AdminBindAuthIdentityInput) (*AdminBoundAuthIdentity, error) {
@@ -1313,6 +1518,26 @@ func cloneAdminAuthIdentityMetadata(input map[string]any) map[string]any {
 	return out
 }
 
+// hydrateAccountPlatforms populates Group.AccountPlatforms for each group via
+// per-group GetAccountPlatforms calls. Used by admin GET endpoints so the
+// frontend can render platform badges. Failures are logged but don't fail the
+// list/get operation — the field stays nil and the UI falls back to showing
+// only the primary Platform.
+//
+// Admin pagination caps page size, so worst-case N=50 queries per request is
+// acceptable. If this becomes a hotspot, add a bulk repo method that does one
+// SQL with WHERE group_id IN (...).
+func (s *adminServiceImpl) hydrateAccountPlatforms(ctx context.Context, groups []Group) {
+	for i := range groups {
+		platforms, err := s.groupRepo.GetAccountPlatforms(ctx, groups[i].ID)
+		if err != nil {
+			logger.LegacyPrintf("service.admin", "hydrate account platforms failed: group_id=%d err=%v", groups[i].ID, err)
+			continue
+		}
+		groups[i].AccountPlatforms = platforms
+	}
+}
+
 // Group management implementations
 func (s *adminServiceImpl) ListGroups(ctx context.Context, page, pageSize int, platform, status, search string, isExclusive *bool, sortBy, sortOrder string) ([]Group, int64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize, SortBy: sortBy, SortOrder: sortOrder}
@@ -1320,19 +1545,42 @@ func (s *adminServiceImpl) ListGroups(ctx context.Context, page, pageSize int, p
 	if err != nil {
 		return nil, 0, err
 	}
+	s.hydrateAccountPlatforms(ctx, groups)
 	return groups, result.Total, nil
 }
 
 func (s *adminServiceImpl) GetAllGroups(ctx context.Context) ([]Group, error) {
-	return s.groupRepo.ListActive(ctx)
+	groups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.hydrateAccountPlatforms(ctx, groups)
+	return groups, nil
 }
 
 func (s *adminServiceImpl) GetAllGroupsByPlatform(ctx context.Context, platform string) ([]Group, error) {
-	return s.groupRepo.ListActiveByPlatform(ctx, platform)
+	groups, err := s.groupRepo.ListActiveByPlatform(ctx, platform)
+	if err != nil {
+		return nil, err
+	}
+	s.hydrateAccountPlatforms(ctx, groups)
+	return groups, nil
 }
 
 func (s *adminServiceImpl) GetGroup(ctx context.Context, id int64) (*Group, error) {
-	return s.groupRepo.GetByID(ctx, id)
+	g, err := s.groupRepo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if g != nil {
+		platforms, perr := s.groupRepo.GetAccountPlatforms(ctx, g.ID)
+		if perr != nil {
+			logger.LegacyPrintf("service.admin", "hydrate account platforms failed: group_id=%d err=%v", g.ID, perr)
+		} else {
+			g.AccountPlatforms = platforms
+		}
+	}
+	return g, nil
 }
 
 func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupInput) (*Group, error) {
@@ -1359,6 +1607,13 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	imagePrice1K := normalizePrice(input.ImagePrice1K)
 	imagePrice2K := normalizePrice(input.ImagePrice2K)
 	imagePrice4K := normalizePrice(input.ImagePrice4K)
+	imageRateMultiplier := 1.0
+	if input.ImageRateMultiplier != nil {
+		if *input.ImageRateMultiplier < 0 {
+			return nil, errors.New("image_rate_multiplier must be >= 0")
+		}
+		imageRateMultiplier = *input.ImageRateMultiplier
+	}
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -1396,14 +1651,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 			}
 		}
 
-		// 校验源分组的平台是否与新分组一致
+		// 校验源分组存在性（per-account 级别的 scope check 在拿到 accountIDs 之后执行）
 		for _, srcGroupID := range uniqueSourceGroupIDs {
-			srcGroup, err := s.groupRepo.GetByIDLite(ctx, srcGroupID)
-			if err != nil {
+			if _, err := s.groupRepo.GetByIDLite(ctx, srcGroupID); err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
-			}
-			if srcGroup.Platform != platform {
-				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, platform, srcGroup.Platform)
 			}
 		}
 
@@ -1412,6 +1663,33 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		accountIDsToCopy, err = s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
+		}
+
+		// Per-account scope guard (design Change 8d-copy): each source
+		// account must (a) belong to an in-scope platform (openai or
+		// anthropic) AND (b) pass isAttachAllowed against the target's
+		// primary platform. Same-platform (e.g. gemini -> gemini) is
+		// trivially allowed via isAttachAllowed; cross-platform mixes for
+		// out-of-scope platforms (gemini, antigravity) stay rejected.
+		if len(accountIDsToCopy) > 0 {
+			accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch accounts for scope check: %w", err)
+			}
+			for _, acc := range accounts {
+				if acc == nil {
+					continue
+				}
+				if acc.Platform == platform {
+					continue // same-platform: trivially in-scope
+				}
+				if !isAccountInScope(acc.Platform) {
+					return nil, fmt.Errorf("account %d platform %s not eligible for multi-platform group", acc.ID, acc.Platform)
+				}
+				if !isAttachAllowed(platform, acc.Platform) {
+					return nil, fmt.Errorf("account %d platform %s not allowed in %s-primary group", acc.ID, acc.Platform, platform)
+				}
+			}
 		}
 	}
 
@@ -1426,6 +1704,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DailyLimitUSD:                   dailyLimit,
 		WeeklyLimitUSD:                  weeklyLimit,
 		MonthlyLimitUSD:                 monthlyLimit,
+		AllowImageGeneration:            input.AllowImageGeneration,
+		ImageRateIndependent:            input.ImageRateIndependent,
+		ImageRateMultiplier:             imageRateMultiplier,
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
@@ -1474,6 +1755,17 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 			return nil, fmt.Errorf("failed to bind accounts to new group: %w", err)
 		}
 		group.AccountCount = int64(len(accountIDsToCopy))
+
+		// Hydrate AccountPlatforms so the admin response includes the derived set
+		// for the newly-bound accounts. Without this, the create response has
+		// AccountPlatforms == nil and the frontend renders only the primary
+		// platform badge until the next list refresh, which is inconsistent for
+		// multi-platform groups built via copy-from-source.
+		if platforms, perr := s.groupRepo.GetAccountPlatforms(ctx, group.ID); perr != nil {
+			logger.LegacyPrintf("service.admin", "post-copy hydrate failed: group_id=%d err=%v", group.ID, perr)
+		} else {
+			group.AccountPlatforms = platforms
+		}
 	}
 
 	return group, nil
@@ -1537,8 +1829,36 @@ func (s *adminServiceImpl) validateFallbackGroup(ctx context.Context, currentGro
 // currentGroupID: 当前分组 ID（新建时为 0）
 // platform/subscriptionType: 当前分组的有效平台/订阅类型
 // fallbackGroupID: 兜底分组 ID
+//
+// Per design Change 8d (multi-platform groups): both the caller-side
+// precondition and the fallback-target check use the derived
+// AccountPlatforms set instead of the primary Platform field, so a
+// multi-platform group with anthropic accounts but a non-anthropic primary
+// participates correctly.
+//   - Caller precondition: pass when the derived set contains anthropic OR
+//     antigravity. For CreateGroup (currentGroupID == 0) the group has no
+//     accounts yet, so the helper falls back to []string{platform}; the
+//     check collapses to the legacy primary-platform behavior.
+//   - Fallback-target check: pass when the fallback group's derived set
+//     contains anthropic.
 func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Context, currentGroupID int64, platform, subscriptionType string, fallbackGroupID int64) error {
-	if platform != PlatformAnthropic && platform != PlatformAntigravity {
+	// Build the caller's effective derived set. For CreateGroup
+	// (currentGroupID == 0) we fall back to []string{platform}; otherwise
+	// hydrate from the repo. On hydration error, fall back to the primary
+	// platform — preserves single-platform behavior under repo failure.
+	callerPlatforms := []string{platform}
+	if currentGroupID > 0 {
+		if hydrated, err := s.groupRepo.GetAccountPlatforms(ctx, currentGroupID); err == nil && hydrated != nil {
+			callerPlatforms = hydrated
+			// If the group has zero accounts (empty slice), still fall
+			// back to the primary platform so admin flows don't trip on
+			// transient empty derived sets during initial wiring.
+			if len(callerPlatforms) == 0 {
+				callerPlatforms = []string{platform}
+			}
+		}
+	}
+	if !slices.Contains(callerPlatforms, PlatformAnthropic) && !slices.Contains(callerPlatforms, PlatformAntigravity) {
 		return fmt.Errorf("invalid request fallback only supported for anthropic or antigravity groups")
 	}
 	if subscriptionType == SubscriptionTypeSubscription {
@@ -1552,8 +1872,13 @@ func (s *adminServiceImpl) validateFallbackGroupOnInvalidRequest(ctx context.Con
 	if err != nil {
 		return fmt.Errorf("fallback group not found: %w", err)
 	}
-	if fallbackGroup.Platform != PlatformAnthropic {
-		return fmt.Errorf("fallback group must be anthropic platform")
+	// Hydrate the fallback group's derived set so multi-platform fallbacks
+	// (e.g. primary openai with attached anthropic accounts) pass the check.
+	if hydrated, err := s.groupRepo.GetAccountPlatforms(ctx, fallbackGroupID); err == nil && hydrated != nil {
+		fallbackGroup.AccountPlatforms = hydrated
+	}
+	if !slices.Contains(GroupAccountPlatforms(fallbackGroup), PlatformAnthropic) {
+		return fmt.Errorf("fallback group must include anthropic accounts")
 	}
 	if fallbackGroup.SubscriptionType == SubscriptionTypeSubscription {
 		return fmt.Errorf("fallback group cannot be subscription type")
@@ -1602,6 +1927,18 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	group.WeeklyLimitUSD = normalizeLimit(input.WeeklyLimitUSD)
 	group.MonthlyLimitUSD = normalizeLimit(input.MonthlyLimitUSD)
 	// 图片生成计费配置：负数表示清除（使用默认价格）
+	if input.AllowImageGeneration != nil {
+		group.AllowImageGeneration = *input.AllowImageGeneration
+	}
+	if input.ImageRateIndependent != nil {
+		group.ImageRateIndependent = *input.ImageRateIndependent
+	}
+	if input.ImageRateMultiplier != nil {
+		if *input.ImageRateMultiplier < 0 {
+			return nil, errors.New("image_rate_multiplier must be >= 0")
+		}
+		group.ImageRateMultiplier = *input.ImageRateMultiplier
+	}
 	if input.ImagePrice1K != nil {
 		group.ImagePrice1K = normalizePrice(input.ImagePrice1K)
 	}
@@ -1678,6 +2015,14 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.RPMLimit != nil {
 		group.RPMLimit = *input.RPMLimit
 	}
+	// Hydrate the derived AccountPlatforms set before sanitize so the
+	// derived-set gate (design Change 8c) sees the live set instead of
+	// the stale/nil snapshot from GetByID. On query failure, leave the
+	// existing value; the helper falls back to []string{Platform} via
+	// service.GroupAccountPlatforms — preserves single-platform behavior.
+	if platforms, err := s.groupRepo.GetAccountPlatforms(ctx, group.ID); err == nil {
+		group.AccountPlatforms = platforms
+	}
 	sanitizeGroupMessagesDispatchFields(group)
 
 	if err := s.groupRepo.Update(ctx, group); err != nil {
@@ -1705,14 +2050,10 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			}
 		}
 
-		// 校验源分组的平台是否与当前分组一致
+		// 校验源分组存在性（per-account 级别的 scope check 在拿到 accountIDs 之后执行）
 		for _, srcGroupID := range uniqueSourceGroupIDs {
-			srcGroup, err := s.groupRepo.GetByIDLite(ctx, srcGroupID)
-			if err != nil {
+			if _, err := s.groupRepo.GetByIDLite(ctx, srcGroupID); err != nil {
 				return nil, fmt.Errorf("source group %d not found: %w", srcGroupID, err)
-			}
-			if srcGroup.Platform != group.Platform {
-				return nil, fmt.Errorf("source group %d platform mismatch: expected %s, got %s", srcGroupID, group.Platform, srcGroup.Platform)
 			}
 		}
 
@@ -1720,6 +2061,28 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		accountIDsToCopy, err := s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
+		}
+
+		// Per-account scope guard (design Change 8d-copy): mirrors CreateGroup.
+		if len(accountIDsToCopy) > 0 {
+			accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
+			if err != nil {
+				return nil, fmt.Errorf("failed to fetch accounts for scope check: %w", err)
+			}
+			for _, acc := range accounts {
+				if acc == nil {
+					continue
+				}
+				if acc.Platform == group.Platform {
+					continue
+				}
+				if !isAccountInScope(acc.Platform) {
+					return nil, fmt.Errorf("account %d platform %s not eligible for multi-platform group", acc.ID, acc.Platform)
+				}
+				if !isAttachAllowed(group.Platform, acc.Platform) {
+					return nil, fmt.Errorf("account %d platform %s not allowed in %s-primary group", acc.ID, acc.Platform, group.Platform)
+				}
+			}
 		}
 
 		// 先清空当前分组的所有账号绑定
@@ -1753,6 +2116,25 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
 				return nil, fmt.Errorf("failed to bind accounts to group: %w", err)
 			}
+		}
+
+		// Re-invalidate auth cache after the copy block: DeleteAccountGroupsByGroupID
+		// + BindAccountsToGroup mutate the group's derived AccountPlatforms set, but
+		// the prior invalidation at :1796 fired BEFORE the copy. Without this
+		// follow-up, a request that lands during the zero-account window between
+		// Delete and Bind can repopulate the auth cache snapshot with stale empty
+		// AccountPlatforms that persists up to L2 TTL (~5 min), breaking
+		// multi-platform routing for keys bound to this group.
+		if s.authCacheInvalidator != nil {
+			s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
+		}
+
+		// Re-hydrate AccountPlatforms so the admin response reflects the post-copy
+		// derived set (the prior hydrate at :1786 was pre-copy and is now stale).
+		if platforms, perr := s.groupRepo.GetAccountPlatforms(ctx, id); perr != nil {
+			logger.LegacyPrintf("service.admin", "post-copy hydrate failed: group_id=%d err=%v", id, perr)
+		} else {
+			group.AccountPlatforms = platforms
 		}
 	}
 
@@ -2163,6 +2545,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 		if err := s.accountRepo.BindGroups(ctx, account.ID, groupIDs); err != nil {
 			return nil, err
 		}
+		// 新分组成员变化会改变其 AccountPlatforms 集合（用于 multi-platform group 路由），
+		// 失效已缓存的 APIKeyAuthGroupSnapshot 强制下次请求重建。
+		s.invalidateAuthCacheForGroups(ctx, groupIDs)
 	}
 
 	// OAuth 账号：创建后异步设置隐私。
@@ -2306,9 +2691,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 
 	// 绑定分组
 	if input.GroupIDs != nil {
+		// 在写入新绑定之前先记录旧绑定，用于后续失效。
+		oldGroupIDs := append([]int64{}, account.GroupIDs...)
 		if err := s.accountRepo.BindGroups(ctx, account.ID, *input.GroupIDs); err != nil {
 			return nil, err
 		}
+		// 失效新旧分组并集：成员离开旧分组 / 加入新分组都会改变各自 AccountPlatforms。
+		s.invalidateAuthCacheForGroups(ctx, mergeGroupIDsUnion(oldGroupIDs, *input.GroupIDs))
 	}
 
 	// 重新查询以确保返回完整数据（包括正确的 Proxy 关联对象）
@@ -2416,12 +2805,29 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		repoUpdates.Schedulable = input.Schedulable
 	}
 
+	// 当需要重新绑定分组时，预加载旧 GroupIDs，用于失效旧分组的 auth cache。
+	// 复用 GetByIDs 单次批量查询，避免 N 次 GetByID。
+	oldGroupIDsByAccount := map[int64][]int64{}
+	if input.GroupIDs != nil {
+		accounts, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
+			if account != nil {
+				oldGroupIDsByAccount[account.ID] = append([]int64{}, account.GroupIDs...)
+			}
+		}
+	}
+
 	// Run bulk update for column/jsonb fields first.
 	if _, err := s.accountRepo.BulkUpdate(ctx, input.AccountIDs, repoUpdates); err != nil {
 		return nil, err
 	}
 
 	// Handle group bindings per account (requires individual operations).
+	// 收集所有受影响的分组（旧+新去重），在循环结束后统一失效。
+	affectedGroups := []int64{}
 	for _, accountID := range input.AccountIDs {
 		entry := BulkUpdateAccountResult{AccountID: accountID}
 
@@ -2434,6 +2840,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				result.Results = append(result.Results, entry)
 				continue
 			}
+			// 即使后续 entry 标记成功，也只对 BindGroups 成功的账号失效缓存。
+			affectedGroups = mergeGroupIDsUnion(affectedGroups, oldGroupIDsByAccount[accountID])
+			affectedGroups = mergeGroupIDsUnion(affectedGroups, *input.GroupIDs)
 		}
 
 		entry.Success = true
@@ -2441,6 +2850,9 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		result.SuccessIDs = append(result.SuccessIDs, accountID)
 		result.Results = append(result.Results, entry)
 	}
+
+	// 在所有 BindGroups 完成后失效一次（去重，避免对同一 group 多次失效）。
+	s.invalidateAuthCacheForGroups(ctx, affectedGroups)
 
 	return result, nil
 }
@@ -2706,6 +3118,15 @@ func (s *adminServiceImpl) GetRedeemCode(ctx context.Context, id int64) (*Redeem
 }
 
 func (s *adminServiceImpl) GenerateRedeemCodes(ctx context.Context, input *GenerateRedeemCodesInput) ([]RedeemCode, error) {
+	// 限制一次批量生成的兑换码数量，避免分配过大切片。
+	const maxRedeemCodeBatch = 10_000
+	if input.Count <= 0 {
+		return nil, errors.New("count must be greater than 0")
+	}
+	if input.Count > maxRedeemCodeBatch {
+		return nil, fmt.Errorf("count %d exceeds max batch size %d", input.Count, maxRedeemCodeBatch)
+	}
+
 	// 如果是订阅类型，验证必须有 GroupID
 	if input.Type == RedeemTypeSubscription {
 		if input.GroupID == nil {
@@ -2876,6 +3297,7 @@ func (s *adminServiceImpl) CheckProxyQuality(ctx context.Context, id int64) (*Pr
 		ProxyURL:              proxyURL,
 		Timeout:               proxyQualityRequestTimeout,
 		ResponseHeaderTimeout: proxyQualityResponseHeaderTimeout,
+		ValidateResolvedIP:    true,
 	})
 	if err != nil {
 		result.Items = append(result.Items, ProxyQualityCheckItem{
@@ -3158,6 +3580,21 @@ func (s *adminServiceImpl) checkMixedChannelRisk(ctx context.Context, currentAcc
 	}
 
 	return nil
+}
+
+// invalidateAuthCacheForGroups 在 account-group 绑定关系变化后，
+// 对一组分组依次触发 API Key 认证缓存失效。
+// nil-guard：authCacheInvalidator 缺省（如部分单元测试场景）时静默跳过。
+func (s *adminServiceImpl) invalidateAuthCacheForGroups(ctx context.Context, groupIDs []int64) {
+	if s.authCacheInvalidator == nil || len(groupIDs) == 0 {
+		return
+	}
+	for _, gid := range groupIDs {
+		if gid <= 0 {
+			continue
+		}
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, gid)
+	}
 }
 
 func (s *adminServiceImpl) validateGroupIDsExist(ctx context.Context, groupIDs []int64) error {

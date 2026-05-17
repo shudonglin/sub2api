@@ -13,7 +13,7 @@ describe('oauth adoption auth api', () => {
     post.mockReset()
     post.mockResolvedValue({ data: {} })
     localStorage.clear()
-    document.cookie = 'oauth_bind_access_token=; Max-Age=0; path=/'
+    document.cookie = 'oauth_bind_access_token=; Max-Age=0; path=/; Secure; SameSite=Strict'
   })
 
   it('posts adoption decisions when exchanging pending oauth completion', async () => {

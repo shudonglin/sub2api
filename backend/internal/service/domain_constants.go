@@ -1,6 +1,6 @@
 package service
 
-import "github.com/Wei-Shaw/sub2api/internal/domain"
+import "github.com/shudonglin/sub2api/internal/domain"
 
 // Status constants
 const (
@@ -51,10 +51,11 @@ const (
 
 // Redeem type constants
 const (
-	RedeemTypeBalance      = domain.RedeemTypeBalance
-	RedeemTypeConcurrency  = domain.RedeemTypeConcurrency
-	RedeemTypeSubscription = domain.RedeemTypeSubscription
-	RedeemTypeInvitation   = domain.RedeemTypeInvitation
+	RedeemTypeBalance          = domain.RedeemTypeBalance
+	RedeemTypeConcurrency      = domain.RedeemTypeConcurrency
+	RedeemTypeSubscription     = domain.RedeemTypeSubscription
+	RedeemTypeInvitation       = domain.RedeemTypeInvitation
+	RedeemTypeAffiliateBalance = "affiliate_balance"
 )
 
 // PromoCode status constants
@@ -286,6 +287,9 @@ const (
 	// SettingKeyOverloadCooldownSettings stores JSON config for 529 overload cooldown handling.
 	SettingKeyOverloadCooldownSettings = "overload_cooldown_settings"
 
+	// SettingKeyRateLimit429CooldownSettings stores JSON config for 429 fallback cooldown handling.
+	SettingKeyRateLimit429CooldownSettings = "rate_limit_429_cooldown_settings"
+
 	// =========================
 	// Stream Timeout Handling
 	// =========================
@@ -334,6 +338,18 @@ const (
 	SettingKeyEnableFingerprintUnification = "enable_fingerprint_unification"
 	// SettingKeyEnableMetadataPassthrough 是否透传客户端原始 metadata.user_id（默认 false）
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
+	// SettingKeyEnableMetadataUserIDAnonymization 是否对 metadata.user_id 中的 device/account 标识做匿名化（默认 false）
+	// 开启后 device_id 和 account_uuid 替换为基于账号 ID 派生的稳定伪名，session_id 语义不变。
+	SettingKeyEnableMetadataUserIDAnonymization = "enable_metadata_userid_anonymization"
+	// SettingKeyEnablePrivacyMode 隐私强化模式总开关（默认 true）
+	// 开启后同时强制启用以下三项能力，无需单独配置子开关：
+	// 1. 指纹头统一（enable_fingerprint_unification）：所有 OAuth 账号共用统一的 X-Stainless-* 指纹，
+	//    防止上游通过指纹差异关联到具体客户端设备。
+	// 2. metadata.user_id 匿名化（enable_metadata_userid_anonymization）：
+	//    device_id 和 account_uuid 替换为稳定伪名，session 语义保留。
+	// 3. 会话 ID 伪装（session_id_masking）：15 分钟内固定 session ID，
+	//    防止上游通过高频 session 变化推断请求模式。
+	SettingKeyEnablePrivacyMode = "enable_privacy_mode"
 	// SettingKeyEnableCCHSigning 是否对 billing header 中的 cch 进行 xxHash64 签名（默认 false）
 	SettingKeyEnableCCHSigning = "enable_cch_signing"
 	// SettingKeyEnableAnthropicCacheTTL1hInjection 是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl（默认 false）

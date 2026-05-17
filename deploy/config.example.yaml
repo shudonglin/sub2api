@@ -4,7 +4,7 @@
 # Copy this file to /etc/sub2api/config.yaml and modify as needed
 # 复制此文件到 /etc/sub2api/config.yaml 并根据需要修改
 #
-# Documentation / 文档: https://github.com/Wei-Shaw/sub2api
+# Documentation / 文档: https://github.com/shudonglin/sub2api
 
 # =============================================================================
 # Server Configuration
@@ -340,6 +340,30 @@ gateway:
   # Stream keepalive interval (seconds), 0=disable
   # 流式 keepalive 间隔（秒），0=禁用
   stream_keepalive_interval: 10
+  # Image stream data interval timeout (seconds), 0=disable; independent from ordinary text streams
+  # 图片流数据间隔超时（秒），0=禁用；独立于普通文本流式
+  image_stream_data_interval_timeout: 900
+  # Image stream keepalive interval (seconds), 0=disable; independent from ordinary text streams
+  # 图片流式 keepalive 间隔（秒），0=禁用；独立于普通文本流式
+  image_stream_keepalive_interval: 10
+  # Image generation independent concurrency limiter (process-local, default disabled)
+  # 图片生成独立并发限制（进程级，默认关闭；多实例总上限约为实例数×该值）
+  image_concurrency:
+    # Enable image-only concurrency protection; false keeps existing behavior unchanged
+    # 是否启用图片独立并发保护；false 保持现有行为不变
+    enabled: false
+    # Max concurrent image generation requests in this process, 0=unlimited
+    # 当前进程允许同时处理的图片生成请求数，0=不限制
+    max_concurrent_requests: 0
+    # Overflow mode when the image concurrency limit is full: reject/wait
+    # 图片并发满时的处理方式：reject=立即拒绝，wait=等待槽位
+    overflow_mode: "reject"
+    # Wait timeout for overflow_mode=wait (seconds), 0=do not wait
+    # wait 模式等待图片并发槽位的超时时间（秒），0=不等待
+    wait_timeout_seconds: 30
+    # Max image requests waiting in this process when overflow_mode=wait, 0=unlimited
+    # wait 模式当前进程允许排队等待的图片请求数，0=不限制
+    max_waiting_requests: 100
   # SSE max line size in bytes (default: 40MB)
   # SSE 单行最大字节数（默认 40MB）
   max_line_size: 41943040
@@ -731,10 +755,10 @@ database:
   # Database name
   # 数据库名称
   dbname: "sub2api"
-  # SSL mode: disable, prefer, require, verify-ca, verify-full
-  # SSL 模式：disable（禁用）, prefer（优先加密，默认）, require（要求）, verify-ca（验证CA）, verify-full（完全验证）
-  # 默认值为 "prefer"，数据库支持 SSL 时自动使用加密连接，不支持时回退明文
-  sslmode: "prefer"
+  # SSL mode: disable, require, verify-ca, verify-full (lib/pq does NOT support "prefer")
+  # SSL 模式：disable（禁用）, require（要求）, verify-ca（验证CA）, verify-full（完全验证）
+  # Use "disable" for Docker internal networks, "require" for external/cloud databases
+  sslmode: "disable"
   # Max open connections (高并发场景建议 256+，需配合 PostgreSQL max_connections 调整)
   # 最大打开连接数
   max_open_conns: 256
@@ -759,9 +783,13 @@ redis:
   # Redis port
   # Redis 端口
   port: 6379
-  # Redis password (leave empty if no password is set)
-  # Redis 密码（如果未设置密码则留空）
-  password: ""
+  # Redis password. REQUIRED in production — never deploy with an empty
+  # password. Replace the placeholder below with a strong secret (or inject
+  # via environment / secrets manager). For a purely local dev instance with
+  # no auth you may replace with "" at your own risk.
+  # Redis 密码。生产环境必须设置强密码，严禁使用空密码部署；
+  # 请在部署前将占位符替换为真实密码或通过环境变量注入。
+  password: "CHANGEME_SET_BEFORE_DEPLOY"
   # Database number (0-15)
   # 数据库编号（0-15）
   db: 0
@@ -894,7 +922,7 @@ default:
   # Initial admin account (created on first run)
   # 初始管理员账户（首次运行时创建）
   admin_email: "admin@example.com"
-  admin_password: "admin123"
+  admin_password: ""  # REQUIRED: Set a strong admin password
 
   # Default settings for new users
   # 新用户默认设置

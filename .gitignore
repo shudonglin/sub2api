@@ -75,6 +75,11 @@ Thumbs.db
 Desktop.ini
 
 # ===================
+# Redis
+# ===================
+dump.rdb
+
+# ===================
 # 临时文件
 # ===================
 tmp/
@@ -136,3 +141,13 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+# Security: prevent committing runtime data with secrets
+deploy/data/
+.gstack/
+
+.worktrees/
+.superpowers/
+
+# Local cutover archives (not tracked)
+archive/
+.context/
