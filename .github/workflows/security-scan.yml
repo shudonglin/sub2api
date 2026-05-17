@@ -85,6 +85,15 @@ jobs:
       - name: Run gitleaks
         run: |
           gitleaks detect --source . --redact --verbose --no-banner --exit-code 1
+      - name: Fail if a real .env file is tracked
+        run: |
+          # Any *.example env template is allowed; any other .env is a leak.
+          tracked=$(git ls-files | grep -E '\.env(\.|$)' | grep -vE '\.example$' || true)
+          if [ -n "$tracked" ]; then
+            echo "::error::Tracked .env file(s) detected — remove from git: $tracked"
+            exit 1
+          fi
+          echo "No tracked .env files — OK"
 
   # Go SAST (gosec) — replaces the Go portion of CodeQL on private repos
   # without GHAS. Runs locally, fails on findings, no SARIF upload.
@@ -155,3 +164,34 @@ jobs:
             --exclude-rule dockerfile.security.missing-user.missing-user \
             --error \
             --metrics=off
+
+  # Container image CVE scan (Trivy) — scans the final Alpine image for
+  # OS-package and bundled-library vulnerabilities, which govulncheck
+  # (Go modules) and pnpm audit (npm) do not cover. --ignore-unfixed
+  # gates only on CVEs that have an available fix, so the job stays
+  # actionable. CLI binary, no token / GitHub API needed.
+  container-scan:
+    name: Container Vulnerability Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Build container image
+        run: docker build -t sub2api:scan -f Dockerfile .
+      - name: Install Trivy
+        env:
+          TRIVY_VERSION: 0.58.1
+        run: |
+          curl -sSLf -o /tmp/trivy.tar.gz \
+            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          tar -xzf /tmp/trivy.tar.gz -C /usr/local/bin trivy
+          trivy --version
+      - name: Scan image for OS + library CVEs
+        run: |
+          trivy image \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            --exit-code 1 \
+            --no-progress \
+            --scanners vuln \
+            sub2api:scan

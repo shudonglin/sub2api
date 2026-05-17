@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Blocks committing real .env files (secrets) and obvious credentials.
+# Enable once per clone:  git config core.hooksPath .githooks
+set -euo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=AM)
+
+# Block any staged .env file except *.example templates
+env_hits=$(echo "$staged" | grep -E '\.env(\.|$)' | grep -vE '\.example$' || true)
+if [ -n "$env_hits" ]; then
+  echo "✖ pre-commit: refusing to commit .env file(s):" >&2
+  echo "$env_hits" | sed 's/^/    /' >&2
+  echo "  .env holds secrets — keep it untracked (.gitignore already covers it)." >&2
+  exit 1
+fi
+
+exit 0
