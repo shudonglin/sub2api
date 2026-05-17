@@ -3,7 +3,7 @@ module github.com/shudonglin/sub2api
 go 1.26.3
 
 require (
-	entgo.io/ent v0.14.5
+	entgo.io/ent v0.14.6
 	github.com/DATA-DOG/go-sqlmock v1.5.2
 	github.com/alitto/pond/v2 v2.6.2
 	github.com/andybalholm/brotli v1.2.1
@@ -51,7 +51,7 @@ require (
 )
 
 require (
-	ariga.io/atlas v0.32.1-0.20250325101103-175b25e1c1b9 // indirect
+	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1 // indirect
 	dario.cat/mergo v1.0.2 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20250102033503-faa5f7b0171c // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -112,7 +112,7 @@ require (
 	github.com/leodido/go-urn v1.2.4 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mdelapenya/tlscert v0.2.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
