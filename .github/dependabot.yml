@@ -39,6 +39,13 @@ updates:
           - "@vue/*"
       dev-dependencies:
         dependency-type: "development"
+    ignore:
+      # Major-version frontend upgrades (vue-router 5, vue-i18n 11, pinia 3,
+      # @vueuse/core 14, vitest 4, eslint 10, ...) are breaking migrations
+      # done deliberately, not via automated PRs. Minor/patch updates still
+      # flow, and security updates are NOT affected by this rule.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
