@@ -20,8 +20,10 @@ FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm — pinned to v9 to match pnpm-lock.yaml (lockfileVersion 9.0)
+# and CI (pnpm/action-setup v9). Do NOT use pnpm@latest: a new pnpm major
+# breaks `--frozen-lockfile` against the committed v9 lockfile.
+RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
