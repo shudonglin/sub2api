@@ -11,6 +11,16 @@ linters:
     - staticcheck
     - unused
 
+  exclusions:
+    rules:
+      # golang.org/x/net/http2/h2c was deprecated in x/net v0.54.0 (bumped
+      # for a security advisory). h2c still works; migrating to the new
+      # http.Server.Protocols / HTTP2Config API is a behavior-sensitive
+      # change to the HTTP/2 cleartext path, tracked as a separate task.
+      - linters:
+          - staticcheck
+        text: "SA1019.*h2c"
+
   settings:
     depguard:
       rules:
