@@ -6,11 +6,9 @@ exceptions:
     reason: "Moby AuthZ plugin bypass via oversized request bodies. Fix requires Moby v29.3.1+, which is not yet published as a Go module tag (latest Go-module-tagged release is v28.5.2 as of April 2026). The Docker client is only used in backend testcontainers integration tests — we do not run a Docker daemon with AuthZ plugins in production."
     mitigation: "Transitive dep via testcontainers-go. Production code does not embed a Docker daemon. Revisit once Moby publishes a v29.x Go module tag."
     expires_on: "2026-07-09"
-    owner: "security@your-domain"
   - package: github.com/docker/docker
     advisory: "GHSA-pxq6-2prw-chj9"
     severity: medium
     reason: "Moby off-by-one error in plugin privilege validation. Same upstream situation as GHSA-x744-4wpc-v9h2 — fix requires Moby v29.3.1+, not yet available as a Go module tag."
     mitigation: "Transitive dep via testcontainers-go. We do not load Docker plugins in production. Revisit once Moby publishes a v29.x Go module tag."
     expires_on: "2026-07-09"
-    owner: "security@your-domain"
