@@ -26,7 +26,7 @@
     "dompurify": "^3.4.0",
     "driver.js": "^1.4.0",
     "file-saver": "^2.0.5",
-    "marked": "^17.0.1",
+    "marked": "^17.0.6",
     "pinia": "^2.1.7",
     "qrcode": "^1.5.4",
     "vue": "^3.4.0",
