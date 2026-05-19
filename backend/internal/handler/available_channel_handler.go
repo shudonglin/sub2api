@@ -3,9 +3,9 @@ package handler
 import (
 	"sort"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/shudonglin/sub2api/internal/pkg/response"
+	"github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 
 	"github.com/gin-gonic/gin"
 )

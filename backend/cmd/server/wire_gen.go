@@ -8,16 +8,16 @@ package main
 
 import (
 	"context"
-	"github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/handler"
-	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
-	"github.com/Wei-Shaw/sub2api/internal/payment"
-	"github.com/Wei-Shaw/sub2api/internal/repository"
-	"github.com/Wei-Shaw/sub2api/internal/server"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
+	"github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/internal/config"
+	"github.com/shudonglin/sub2api/internal/handler"
+	"github.com/shudonglin/sub2api/internal/handler/admin"
+	"github.com/shudonglin/sub2api/internal/payment"
+	"github.com/shudonglin/sub2api/internal/repository"
+	"github.com/shudonglin/sub2api/internal/server"
+	"github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 	"log"
 	"net/http"
 	"sync"
@@ -26,7 +26,7 @@ import (
 
 import (
 	_ "embed"
-	_ "github.com/Wei-Shaw/sub2api/ent/runtime"
+	_ "github.com/shudonglin/sub2api/ent/runtime"
 )
 
 // Injectors from wire.go:

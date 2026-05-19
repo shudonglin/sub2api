@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
+	"github.com/shudonglin/sub2api/internal/pkg/response"
+	"github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 var validOpsAlertMetricTypes = []string{

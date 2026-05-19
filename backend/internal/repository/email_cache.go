@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/redis/go-redis/v9"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 const (

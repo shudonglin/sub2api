@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
-	"github.com/Wei-Shaw/sub2api/ent/channelmonitorhistory"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/channelmonitor"
+	"github.com/shudonglin/sub2api/ent/channelmonitorhistory"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 // channelMonitorRepository 实现 service.ChannelMonitorRepository。

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shudonglin/sub2api/internal/pkg/openai"
+	"github.com/shudonglin/sub2api/internal/pkg/response"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 const codexImportClockSkewSeconds int64 = 120

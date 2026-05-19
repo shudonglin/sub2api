@@ -11,11 +11,11 @@ import (
 
 	"github.com/google/uuid"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/usagestats"
-	"github.com/Wei-Shaw/sub2api/internal/service"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/timezone"
+	"github.com/shudonglin/sub2api/internal/pkg/usagestats"
+	"github.com/shudonglin/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )

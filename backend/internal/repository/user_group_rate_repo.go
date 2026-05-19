@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 type userGroupRateRepository struct {

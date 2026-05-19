@@ -15,11 +15,11 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
-	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/gin-gonic/gin"
+	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
+	"github.com/shudonglin/sub2api/internal/pkg/ip"
+	middleware2 "github.com/shudonglin/sub2api/internal/server/middleware"
+	"github.com/shudonglin/sub2api/internal/service"
 )
 
 const (

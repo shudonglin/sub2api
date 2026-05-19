@@ -10,8 +10,8 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/dgraph-io/ristretto"
+	"github.com/shudonglin/sub2api/internal/config"
 )
 
 const apiKeyAuthSnapshotVersion = 9 // v9: added API Key name for audit logs
