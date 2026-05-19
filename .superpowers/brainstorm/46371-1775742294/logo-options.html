@@ -1,0 +1,150 @@
+<h2>KuaiAPI Logo Concepts</h2>
+<p class="subtitle">"Kuai" (快) = Fast. Pick a direction that feels right.</p>
+
+<div class="cards" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+
+  <!-- Logo A: Lightning Bolt + Brackets -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;padding:40px;min-height:200px;">
+      <svg width="200" height="80" viewBox="0 0 200 80">
+        <!-- Bracket left -->
+        <text x="10" y="55" font-family="JetBrains Mono, monospace" font-size="48" font-weight="700" fill="#3b82f6" opacity="0.8">&lt;</text>
+        <!-- Lightning bolt -->
+        <polygon points="95,8 78,42 92,42 82,72 115,35 100,35 110,8" fill="url(#gradA)" />
+        <defs>
+          <linearGradient id="gradA" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#facc15" />
+            <stop offset="100%" style="stop-color:#f97316" />
+          </linearGradient>
+        </defs>
+        <!-- Bracket right -->
+        <text x="120" y="55" font-family="JetBrains Mono, monospace" font-size="48" font-weight="700" fill="#3b82f6" opacity="0.8">/&gt;</text>
+      </svg>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <svg width="32" height="32" viewBox="0 0 32 32">
+          <rect width="32" height="32" rx="8" fill="#0f172a"/>
+          <polygon points="18,4 12,17 16,17 13,28 23,14 19,14 22,4" fill="url(#iconA)" />
+          <defs><linearGradient id="iconA" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#facc15"/><stop offset="100%" style="stop-color:#f97316"/></linearGradient></defs>
+        </svg>
+        <span style="font-weight:800;font-size:18px;color:#0f172a;">Kuai<span style="color:#f97316;">API</span></span>
+      </div>
+      <h3>A — Lightning Code</h3>
+      <p>Lightning bolt inside code brackets. Direct "fast API" message. Bold, techy, developer-focused.</p>
+    </div>
+  </div>
+
+  <!-- Logo B: Speed Lines + Arrow -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;padding:40px;min-height:200px;">
+      <svg width="200" height="80" viewBox="0 0 200 80">
+        <!-- Speed lines -->
+        <line x1="15" y1="30" x2="50" y2="30" stroke="#6366f1" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+        <line x1="5" y1="40" x2="55" y2="40" stroke="#6366f1" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
+        <line x1="15" y1="50" x2="50" y2="50" stroke="#6366f1" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+        <!-- Fast arrow/chevron -->
+        <path d="M60,15 L90,40 L60,65" fill="none" stroke="url(#gradB)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M80,15 L110,40 L80,65" fill="none" stroke="url(#gradB2)" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- API text -->
+        <text x="120" y="50" font-family="Inter, system-ui" font-size="32" font-weight="800" fill="white">API</text>
+        <defs>
+          <linearGradient id="gradB" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#818cf8" />
+            <stop offset="100%" style="stop-color:#6366f1" />
+          </linearGradient>
+          <linearGradient id="gradB2" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#a78bfa" />
+            <stop offset="100%" style="stop-color:#8b5cf6" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <svg width="32" height="32" viewBox="0 0 32 32">
+          <rect width="32" height="32" rx="8" fill="#0f172a"/>
+          <path d="M8,10 L16,16 L8,22" fill="none" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M14,10 L22,16 L14,22" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span style="font-weight:800;font-size:18px;color:#0f172a;">Kuai<span style="color:#6366f1;">API</span></span>
+      </div>
+      <h3>B — Double Chevron</h3>
+      <p>Speed lines + double fast-forward arrows. Conveys motion and acceleration. Clean, modern.</p>
+    </div>
+  </div>
+
+  <!-- Logo C: 快 Character Stylized -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;padding:40px;min-height:200px;">
+      <svg width="200" height="80" viewBox="0 0 200 80">
+        <!-- Stylized 快 -->
+        <text x="20" y="62" font-family="'Noto Sans SC', 'PingFang SC', system-ui" font-size="56" font-weight="900" fill="url(#gradC)">快</text>
+        <!-- Dot separator -->
+        <circle cx="95" cy="45" r="4" fill="#10b981"/>
+        <!-- API text -->
+        <text x="110" y="52" font-family="Inter, system-ui" font-size="32" font-weight="800" fill="white">API</text>
+        <defs>
+          <linearGradient id="gradC" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" style="stop-color:#10b981" />
+            <stop offset="100%" style="stop-color:#059669" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <svg width="32" height="32" viewBox="0 0 32 32">
+          <rect width="32" height="32" rx="8" fill="#0f172a"/>
+          <text x="5" y="24" font-family="'Noto Sans SC', 'PingFang SC', system-ui" font-size="22" font-weight="900" fill="#10b981">快</text>
+        </svg>
+        <span style="font-weight:800;font-size:18px;color:#0f172a;"><span style="color:#10b981;">快</span>API</span>
+      </div>
+      <h3>C — Chinese Character</h3>
+      <p>The actual 快 character as the logo mark. Bilingual appeal, culturally distinctive. Stands out from generic API branding.</p>
+    </div>
+  </div>
+
+  <!-- Logo D: Rocket Minimal -->
+  <div class="card" data-choice="d" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:linear-gradient(135deg,#0f172a,#1e293b);display:flex;align-items:center;justify-content:center;padding:40px;min-height:200px;">
+      <svg width="200" height="80" viewBox="0 0 200 80">
+        <!-- Minimal rocket -->
+        <g transform="translate(40,40) rotate(-45)">
+          <ellipse cx="0" cy="0" rx="12" ry="20" fill="url(#gradD)" />
+          <polygon points="-8,14 0,28 8,14" fill="#ef4444" opacity="0.8"/>
+          <polygon points="-6,16 0,24 6,16" fill="#fbbf24"/>
+          <circle cx="0" cy="-4" r="4" fill="#0f172a"/>
+        </g>
+        <!-- Trail dots -->
+        <circle cx="18" cy="62" r="2" fill="#ef4444" opacity="0.3"/>
+        <circle cx="24" cy="56" r="2.5" fill="#ef4444" opacity="0.5"/>
+        <circle cx="30" cy="50" r="3" fill="#ef4444" opacity="0.7"/>
+        <!-- Text -->
+        <text x="85" y="50" font-family="Inter, system-ui" font-size="30" font-weight="800" fill="white">KuaiAPI</text>
+        <defs>
+          <linearGradient id="gradD" x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" style="stop-color:#60a5fa" />
+            <stop offset="100%" style="stop-color:#3b82f6" />
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <svg width="32" height="32" viewBox="0 0 32 32">
+          <rect width="32" height="32" rx="8" fill="#0f172a"/>
+          <g transform="translate(16,16) rotate(-45)">
+            <ellipse cx="0" cy="0" rx="6" ry="10" fill="#60a5fa"/>
+            <polygon points="-4,7 0,14 4,7" fill="#ef4444" opacity="0.8"/>
+            <circle cx="0" cy="-2" r="2" fill="#0f172a"/>
+          </g>
+        </svg>
+        <span style="font-weight:800;font-size:18px;color:#0f172a;">Kuai<span style="color:#3b82f6;">API</span></span>
+      </div>
+      <h3>D — Minimal Rocket</h3>
+      <p>Rocket icon for speed and launch. Playful, approachable. Good for consumer-facing API service.</p>
+    </div>
+  </div>
+
+</div>

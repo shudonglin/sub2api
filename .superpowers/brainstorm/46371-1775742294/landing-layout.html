@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KuaiAPI Landing Page Layouts</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family: Inter, system-ui, sans-serif; background:#0a0a0a; color:#e2e8f0; }
+
+  .picker { max-width:1200px; margin:0 auto; padding:32px 24px; }
+  .picker h1 { font-size:24px; margin-bottom:8px; color:#ccff00; }
+  .picker .sub { color:#94a3b8; margin-bottom:32px; font-size:14px; }
+
+  .layout-option {
+    border:2px solid #1e293b; border-radius:16px; margin-bottom:32px;
+    cursor:pointer; transition:all 0.2s;
+    overflow:hidden;
+  }
+  .layout-option:hover { border-color:#ccff00; }
+  .layout-option.selected { border-color:#ccff00; box-shadow:0 0 30px rgba(204,255,0,0.15); }
+
+  .option-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:16px 24px; background:#111;
+  }
+  .option-header h2 { font-size:18px; }
+  .option-header .badge {
+    background:#ccff00; color:#0a0a0a; padding:4px 12px;
+    border-radius:20px; font-size:12px; font-weight:700;
+  }
+
+  /* Mockup frames */
+  .mockup-frame {
+    background:#0f172a; padding:24px; overflow-x:auto;
+  }
+  .page-mock {
+    min-width:900px; background:#0a0a0a; border-radius:12px;
+    border:1px solid #1e293b; overflow:hidden;
+  }
+
+  /* Shared nav */
+  .nav { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; border-bottom:1px solid #1e293b; }
+  .nav-logo { display:flex; align-items:center; gap:8px; font-weight:800; font-size:16px; }
+  .nav-logo svg { width:24px; height:24px; }
+  .nav-links { display:flex; gap:20px; font-size:13px; color:#94a3b8; }
+  .nav-links span:hover { color:#ccff00; }
+  .nav-cta { background:#ccff00; color:#0a0a0a; padding:6px 16px; border-radius:8px; font-size:12px; font-weight:700; }
+
+  .section-label { font-size:10px; color:#64748b; text-transform:uppercase; letter-spacing:0.1em; position:absolute; right:8px; top:8px; }
+
+  /* Selection indicator */
+  .select-indicator {
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#ccff00; color:#0a0a0a; padding:12px 24px; border-radius:12px;
+    font-weight:700; font-size:14px; z-index:100; display:none;
+    box-shadow:0 4px 20px rgba(204,255,0,0.3);
+  }
+</style>
+</head>
+<body>
+
+<div class="picker">
+  <h1>KuaiAPI Landing Page Layout</h1>
+  <p class="sub">Pick a page structure. Click to select.</p>
+
+  <!-- Layout A: OpenRouter Style -->
+  <div class="layout-option" data-choice="layout-a" onclick="selectOption(this)">
+    <div class="option-header">
+      <h2>A — OpenRouter Style (Model-First)</h2>
+      <span class="badge">Like openrouter.ai</span>
+    </div>
+    <div class="mockup-frame">
+      <div class="page-mock">
+        <!-- Nav -->
+        <div class="nav">
+          <div class="nav-logo">
+            <svg viewBox="0 0 36 36"><rect width="36" height="36" rx="9" fill="#1a2600"/><path d="M9,12 L18,18 L9,24" fill="none" stroke="#e5ff4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16,12 L25,18 L16,24" fill="none" stroke="#ccff00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Kuai<span style="color:#ccff00">API</span>
+          </div>
+          <div class="nav-links">
+            <span>Models</span><span>Pricing</span><span>Docs</span><span>Dashboard</span>
+          </div>
+          <div class="nav-cta">Get API Key</div>
+        </div>
+
+        <!-- Hero: compact, search-focused -->
+        <div style="padding:48px 24px 32px;text-align:center;">
+          <div style="font-size:32px;font-weight:800;margin-bottom:8px;">One API, <span style="color:#ccff00;">219 Models</span></div>
+          <div style="color:#94a3b8;font-size:14px;margin-bottom:24px;">Access Claude, GPT, Gemini & DeepSeek through a single endpoint</div>
+          <div style="max-width:500px;margin:0 auto;background:#1e293b;border-radius:10px;padding:10px 16px;display:flex;align-items:center;gap:8px;">
+            <span style="color:#64748b;">🔍</span>
+            <span style="color:#64748b;font-size:13px;">Search models... e.g. claude-opus-4-6, gpt-4o</span>
+          </div>
+        </div>
+
+        <!-- Model table -->
+        <div style="padding:0 24px 24px;">
+          <div style="position:relative;">
+            <span class="section-label">MODEL TABLE</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="border-bottom:1px solid #1e293b;color:#64748b;">
+                <th style="text-align:left;padding:8px;">Model</th>
+                <th style="text-align:left;padding:8px;">Provider</th>
+                <th style="text-align:right;padding:8px;">Input $/M</th>
+                <th style="text-align:right;padding:8px;">Output $/M</th>
+                <th style="text-align:right;padding:8px;">Context</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:8px;color:#ccff00;">claude-opus-4-6</td><td style="padding:8px;">Anthropic</td><td style="text-align:right;padding:8px;">$5.00</td><td style="text-align:right;padding:8px;">$25.00</td><td style="text-align:right;padding:8px;">200K</td></tr>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:8px;color:#ccff00;">gpt-4o</td><td style="padding:8px;">OpenAI</td><td style="text-align:right;padding:8px;">$2.50</td><td style="text-align:right;padding:8px;">$10.00</td><td style="text-align:right;padding:8px;">128K</td></tr>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:8px;color:#ccff00;">gemini-2.5-pro</td><td style="padding:8px;">Google</td><td style="text-align:right;padding:8px;">$1.25</td><td style="text-align:right;padding:8px;">$10.00</td><td style="text-align:right;padding:8px;">1M</td></tr>
+              <tr><td style="padding:8px;color:#64748b;" colspan="5">... 216 more models</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bottom: quick start snippet -->
+        <div style="padding:16px 24px 24px;border-top:1px solid #1e293b;">
+          <div style="display:flex;gap:24px;">
+            <div style="flex:1;position:relative;">
+              <span class="section-label">QUICK START</span>
+              <div style="background:#0f172a;border-radius:8px;padding:12px;font-family:monospace;font-size:11px;color:#94a3b8;">
+                <div><span style="color:#ccff00;">curl</span> https://api.kuaiapi.xyz/v1/chat/completions \</div>
+                <div>&nbsp; -H "Authorization: Bearer $KUAI_KEY" \</div>
+                <div>&nbsp; -d '{"model": "claude-opus-4-6"}'</div>
+              </div>
+            </div>
+            <div style="flex:1;position:relative;">
+              <span class="section-label">PROVIDERS</span>
+              <div style="display:flex;gap:12px;padding-top:8px;">
+                <div style="background:#1e293b;border-radius:8px;padding:8px 14px;font-size:11px;">Anthropic <span style="color:#ccff00;">27</span></div>
+                <div style="background:#1e293b;border-radius:8px;padding:8px 14px;font-size:11px;">OpenAI <span style="color:#ccff00;">122</span></div>
+                <div style="background:#1e293b;border-radius:8px;padding:8px 14px;font-size:11px;">Google <span style="color:#ccff00;">67</span></div>
+                <div style="background:#1e293b;border-radius:8px;padding:8px 14px;font-size:11px;">DeepSeek <span style="color:#ccff00;">3</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px 24px;background:#111;font-size:13px;color:#94a3b8;">
+      <strong style="color:#e2e8f0;">Best for:</strong> Users who want to browse models and compare pricing. Search-driven. Data-dense. Focuses on model catalog as the hero.
+    </div>
+  </div>
+
+  <!-- Layout B: Marketing Hero Style -->
+  <div class="layout-option" data-choice="layout-b" onclick="selectOption(this)">
+    <div class="option-header">
+      <h2>B — Marketing Hero (Brand-First)</h2>
+      <span class="badge">Like hanhan.fit</span>
+    </div>
+    <div class="mockup-frame">
+      <div class="page-mock">
+        <!-- Nav -->
+        <div class="nav">
+          <div class="nav-logo">
+            <svg viewBox="0 0 36 36"><rect width="36" height="36" rx="9" fill="#1a2600"/><path d="M9,12 L18,18 L9,24" fill="none" stroke="#e5ff4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16,12 L25,18 L16,24" fill="none" stroke="#ccff00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Kuai<span style="color:#ccff00">API</span>
+          </div>
+          <div class="nav-links">
+            <span>Features</span><span>Pricing</span><span>Docs</span><span>Login</span>
+          </div>
+          <div class="nav-cta">Get Started</div>
+        </div>
+
+        <!-- Big hero -->
+        <div style="padding:64px 24px 48px;text-align:center;background:radial-gradient(ellipse at center top, rgba(204,255,0,0.08) 0%, transparent 60%);">
+          <div style="font-size:11px;color:#ccff00;text-transform:uppercase;letter-spacing:0.15em;margin-bottom:12px;font-weight:600;">⚡ The fastest AI API gateway</div>
+          <div style="font-size:40px;font-weight:800;line-height:1.2;margin-bottom:16px;">Access <span style="color:#ccff00;">every AI model</span><br>through one API</div>
+          <div style="color:#94a3b8;font-size:15px;max-width:480px;margin:0 auto 28px;">Claude, GPT, Gemini, DeepSeek — 219 models, one endpoint. Pay-as-you-go or subscribe. Start in 30 seconds.</div>
+          <div style="display:flex;gap:12px;justify-content:center;">
+            <div style="background:#ccff00;color:#0a0a0a;padding:10px 24px;border-radius:10px;font-weight:700;font-size:14px;">Get Free API Key</div>
+            <div style="border:1px solid #334155;padding:10px 24px;border-radius:10px;font-size:14px;color:#e2e8f0;">View Docs →</div>
+          </div>
+        </div>
+
+        <!-- Feature cards -->
+        <div style="padding:0 24px 32px;position:relative;">
+          <span class="section-label">FEATURES</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;">
+            <div style="background:#111;border:1px solid #1e293b;border-radius:10px;padding:16px;">
+              <div style="font-size:20px;margin-bottom:6px;">🔄</div>
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Unified API</div>
+              <div style="font-size:11px;color:#64748b;">OpenAI-compatible. Drop-in replacement.</div>
+            </div>
+            <div style="background:#111;border:1px solid #1e293b;border-radius:10px;padding:16px;">
+              <div style="font-size:20px;margin-bottom:6px;">⚡</div>
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Low Latency</div>
+              <div style="font-size:11px;color:#64748b;">Singapore servers. Asia-optimized routing.</div>
+            </div>
+            <div style="background:#111;border:1px solid #1e293b;border-radius:10px;padding:16px;">
+              <div style="font-size:20px;margin-bottom:6px;">💰</div>
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px;">Pay as You Go</div>
+              <div style="font-size:11px;color:#64748b;">No minimums. Exact token-level billing.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pricing preview -->
+        <div style="padding:16px 24px 24px;border-top:1px solid #1e293b;position:relative;">
+          <span class="section-label">PRICING PLANS</span>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px;">
+            <div style="background:#111;border:1px solid #1e293b;border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Starter</div>
+              <div style="font-size:24px;font-weight:800;">$5</div>
+              <div style="font-size:11px;color:#64748b;">/month</div>
+            </div>
+            <div style="background:#111;border:2px solid #ccff00;border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-size:12px;color:#ccff00;margin-bottom:4px;">Pro</div>
+              <div style="font-size:24px;font-weight:800;">$20</div>
+              <div style="font-size:11px;color:#64748b;">/month</div>
+            </div>
+            <div style="background:#111;border:1px solid #1e293b;border-radius:10px;padding:16px;text-align:center;">
+              <div style="font-size:12px;color:#64748b;margin-bottom:4px;">Enterprise</div>
+              <div style="font-size:24px;font-weight:800;">Custom</div>
+              <div style="font-size:11px;color:#64748b;">contact us</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px 24px;background:#111;font-size:13px;color:#94a3b8;">
+      <strong style="color:#e2e8f0;">Best for:</strong> Building brand trust first. Big hero, feature highlights, pricing tiers. Converts visitors who don't know the product yet. More consumer-friendly.
+    </div>
+  </div>
+
+  <!-- Layout C: Hybrid -->
+  <div class="layout-option" data-choice="layout-c" onclick="selectOption(this)">
+    <div class="option-header">
+      <h2>C — Hybrid (Hero + Model Table)</h2>
+      <span class="badge">Best of both</span>
+    </div>
+    <div class="mockup-frame">
+      <div class="page-mock">
+        <!-- Nav -->
+        <div class="nav">
+          <div class="nav-logo">
+            <svg viewBox="0 0 36 36"><rect width="36" height="36" rx="9" fill="#1a2600"/><path d="M9,12 L18,18 L9,24" fill="none" stroke="#e5ff4d" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M16,12 L25,18 L16,24" fill="none" stroke="#ccff00" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Kuai<span style="color:#ccff00">API</span>
+          </div>
+          <div class="nav-links">
+            <span>Models</span><span>Pricing</span><span>Docs</span><span>Dashboard</span>
+          </div>
+          <div class="nav-cta">Get API Key</div>
+        </div>
+
+        <!-- Compact hero with code snippet -->
+        <div style="padding:40px 24px 32px;display:flex;gap:32px;align-items:center;">
+          <div style="flex:1;">
+            <div style="font-size:28px;font-weight:800;line-height:1.2;margin-bottom:12px;">The <span style="color:#ccff00;">fastest</span> way to<br>access AI models</div>
+            <div style="color:#94a3b8;font-size:13px;margin-bottom:20px;">219 models. 4 providers. One API key. OpenAI-compatible.</div>
+            <div style="display:flex;gap:10px;">
+              <div style="background:#ccff00;color:#0a0a0a;padding:8px 20px;border-radius:8px;font-weight:700;font-size:13px;">Get Free Key</div>
+              <div style="border:1px solid #334155;padding:8px 20px;border-radius:8px;font-size:13px;">Docs →</div>
+            </div>
+          </div>
+          <div style="flex:1;">
+            <div style="background:#0f172a;border-radius:10px;padding:14px;font-family:monospace;font-size:11px;color:#94a3b8;border:1px solid #1e293b;">
+              <div style="color:#64748b;margin-bottom:6px;"># Drop-in replacement</div>
+              <div><span style="color:#ccff00;">from</span> openai <span style="color:#ccff00;">import</span> OpenAI</div>
+              <div style="margin-top:4px;">client = OpenAI(</div>
+              <div>&nbsp; base_url=<span style="color:#fbbf24;">"https://api.kuaiapi.xyz/v1"</span>,</div>
+              <div>&nbsp; api_key=<span style="color:#fbbf24;">"sk-..."</span></div>
+              <div>)</div>
+              <div style="margin-top:6px;">resp = client.chat.completions.create(</div>
+              <div>&nbsp; model=<span style="color:#fbbf24;">"claude-opus-4-6"</span>,</div>
+              <div>&nbsp; messages=[{<span style="color:#fbbf24;">"role"</span>: <span style="color:#fbbf24;">"user"</span>, ...}]</div>
+              <div>)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Provider pills + model table -->
+        <div style="padding:0 24px 24px;border-top:1px solid #1e293b;position:relative;">
+          <div style="display:flex;gap:8px;padding:16px 0 12px;">
+            <div style="background:#ccff00;color:#0a0a0a;border-radius:6px;padding:4px 12px;font-size:11px;font-weight:700;">All (219)</div>
+            <div style="background:#1e293b;border-radius:6px;padding:4px 12px;font-size:11px;">Anthropic (27)</div>
+            <div style="background:#1e293b;border-radius:6px;padding:4px 12px;font-size:11px;">OpenAI (122)</div>
+            <div style="background:#1e293b;border-radius:6px;padding:4px 12px;font-size:11px;">Google (67)</div>
+            <div style="background:#1e293b;border-radius:6px;padding:4px 12px;font-size:11px;">DeepSeek (3)</div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead><tr style="border-bottom:1px solid #1e293b;color:#64748b;"><th style="text-align:left;padding:6px;">Model</th><th style="text-align:right;padding:6px;">Input</th><th style="text-align:right;padding:6px;">Output</th></tr></thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:6px;color:#ccff00;">claude-opus-4-6</td><td style="text-align:right;padding:6px;">$5.00/M</td><td style="text-align:right;padding:6px;">$25.00/M</td></tr>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:6px;color:#ccff00;">gpt-4o</td><td style="text-align:right;padding:6px;">$2.50/M</td><td style="text-align:right;padding:6px;">$10.00/M</td></tr>
+              <tr style="border-bottom:1px solid #0f172a;"><td style="padding:6px;color:#ccff00;">gemini-2.5-pro</td><td style="text-align:right;padding:6px;">$1.25/M</td><td style="text-align:right;padding:6px;">$10.00/M</td></tr>
+              <tr><td style="padding:6px;color:#64748b;" colspan="3">... 216 more</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px 24px;background:#111;font-size:13px;color:#94a3b8;">
+      <strong style="color:#e2e8f0;">Best for:</strong> Compact hero + code snippet on left, model table below. Developers see the value prop AND the model catalog immediately. My recommendation for a developer-facing API product.
+    </div>
+  </div>
+
+</div>
+
+<div class="select-indicator" id="indicator">Selected!</div>
+
+<script>
+let selected = null;
+function selectOption(el) {
+  document.querySelectorAll('.layout-option').forEach(o => o.classList.remove('selected'));
+  el.classList.add('selected');
+  selected = el.dataset.choice;
+  const ind = document.getElementById('indicator');
+  ind.textContent = '✓ Selected: ' + el.querySelector('h2').textContent;
+  ind.style.display = 'block';
+
+  // Record event
+  const evt = {type:'click', choice:selected, text:el.querySelector('h2').textContent, timestamp:Date.now()};
+  fetch('/event', {method:'POST', body:JSON.stringify(evt)}).catch(()=>{});
+}
+</script>
+</body>
+</html>

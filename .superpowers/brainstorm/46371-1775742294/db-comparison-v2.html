@@ -1,0 +1,157 @@
+<h2>Updated: Prisma Postgres vs Supabase for sub2apipay</h2>
+<p class="subtitle">Corrected — both have Singapore region. Let's focus on what actually matters.</p>
+
+<div class="section">
+  <h3>Corrected Comparison</h3>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
+      <thead>
+        <tr style="border-bottom:2px solid #e2e8f0;">
+          <th style="text-align:left;padding:12px 16px;color:#64748b;font-size:12px;text-transform:uppercase;width:30%;">Feature</th>
+          <th style="text-align:center;padding:12px 16px;background:#f0fdf4;">
+            <div style="font-size:16px;font-weight:700;color:#059669;">Supabase Free</div>
+          </th>
+          <th style="text-align:center;padding:12px 16px;background:#f5f3ff;">
+            <div style="font-size:16px;font-weight:700;color:#7c3aed;">Prisma Postgres Free</div>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">🇸🇬 Singapore</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;color:#059669;font-weight:700;">✅ ap-southeast-1</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;color:#7c3aed;font-weight:700;">✅ ap-southeast-1</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Storage</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">500 MB</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">500 MB</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Query Limits</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Unlimited</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">100,000 ops/month</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Connections (direct)</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">~60</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">10</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Connections (pooled)</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Unlimited via Supavisor</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">10</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Inactivity Pause</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Yes (1 week idle)</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">No</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Extras</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Auth, Storage, Edge Funcs</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">Query Insights, Cloudflare Cache</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-weight:600;">Paid starts at</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">$25/month</td>
+          <td style="text-align:center;padding:10px 16px;background:#f5f3ff;">$10/month (1M ops)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section">
+  <h3>Will you hit the 100K ops limit?</h3>
+  <p class="subtitle">Let's count operations per payment flow</p>
+
+  <div style="background:#1e293b;border-radius:12px;padding:20px;color:#e2e8f0;font-family:monospace;font-size:13px;line-height:1.8;margin-bottom:20px;">
+    <div style="color:#94a3b8;margin-bottom:8px;">── Per payment order lifecycle ──</div>
+    <div><span style="color:#fbbf24;">1.</span> Load payment page (plans, channels, config) <span style="color:#60a5fa;">→ 2-3 ops</span></div>
+    <div><span style="color:#fbbf24;">2.</span> Create order + audit log <span style="color:#60a5fa;">→ 1 op</span> <span style="color:#4ade80;">(array transaction = 1 op!)</span></div>
+    <div><span style="color:#fbbf24;">3.</span> Payment callback → update order <span style="color:#60a5fa;">→ 1 op</span></div>
+    <div><span style="color:#fbbf24;">4.</span> Mark completed + audit log <span style="color:#60a5fa;">→ 1 op</span> <span style="color:#4ade80;">(array transaction)</span></div>
+    <div style="border-top:1px solid #475569;margin-top:8px;padding-top:8px;color:#fbbf24;font-weight:700;">
+      Total per order: ~5-6 ops
+    </div>
+    <div style="color:#94a3b8;margin-top:16px;margin-bottom:8px;">── Other recurring ops ──</div>
+    <div>Admin panel visits (list orders, stats) <span style="color:#60a5fa;">→ ~3-5 ops each</span></div>
+    <div>Expired order cleanup jobs <span style="color:#60a5fa;">→ ~1-2 ops each</span></div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px;">
+    <div style="background:#f0fdf4;border:2px solid #86efac;border-radius:12px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Small Scale</div>
+      <div style="font-size:28px;font-weight:800;color:#059669;margin:8px 0;">~3,000</div>
+      <div style="font-size:13px;color:#475569;">ops/month</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:8px;">100 orders + 50 admin visits</div>
+      <div style="font-size:11px;color:#059669;font-weight:600;margin-top:4px;">✅ 3% of limit</div>
+    </div>
+    <div style="background:#fefce8;border:2px solid #fde047;border-radius:12px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Medium Scale</div>
+      <div style="font-size:28px;font-weight:800;color:#ca8a04;margin:8px 0;">~15,000</div>
+      <div style="font-size:13px;color:#475569;">ops/month</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:8px;">2,000 orders + 200 admin visits</div>
+      <div style="font-size:11px;color:#ca8a04;font-weight:600;margin-top:4px;">⚡ 15% of limit</div>
+    </div>
+    <div style="background:#fef2f2;border:2px solid #fca5a5;border-radius:12px;padding:16px;text-align:center;">
+      <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Hitting Limit</div>
+      <div style="font-size:28px;font-weight:800;color:#dc2626;margin:8px 0;">~100,000</div>
+      <div style="font-size:13px;color:#475569;">ops/month</div>
+      <div style="font-size:12px;color:#6b7280;margin-top:8px;">~15,000 orders + heavy admin</div>
+      <div style="font-size:11px;color:#dc2626;font-weight:600;margin-top:4px;">⚠️ Need $10/mo Starter</div>
+    </div>
+  </div>
+
+  <div style="background:#eff6ff;border-left:4px solid #3b82f6;padding:16px;border-radius:0 8px 8px 0;font-size:13px;color:#1e40af;margin-bottom:20px;">
+    <strong>Key insight from Prisma FAQ:</strong> Array transactions (e.g. <code>prisma.$transaction([query1, query2])</code>) count as <strong>1 operation</strong>, not 2. So batching writes is free. Interactive transactions count each query separately.
+  </div>
+</div>
+
+<h3>So which one?</h3>
+
+<div class="options">
+  <div class="option" data-choice="supabase" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Supabase — Share your existing DB</h3>
+      <p><strong>Best if:</strong> You want zero cost, zero setup, and your sub2api is already there.</p>
+      <ul style="font-size:13px;margin-top:8px;">
+        <li>No ops limit — never worry about hitting a cap</li>
+        <li>Already set up and running</li>
+        <li>⚠️ Risk: shared 500MB with sub2api, and your free project limit is used up</li>
+        <li>⚠️ Risk: pauses after 1 week idle (unlikely for payment system)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="prisma" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Prisma Postgres — Separate free DB</h3>
+      <p><strong>Best if:</strong> You want payment data isolated and don't want to share storage quota.</p>
+      <ul style="font-size:13px;margin-top:8px;">
+        <li>Separate 500MB just for payments — doesn't eat into sub2api's storage</li>
+        <li>No idle pause — always on</li>
+        <li>Built-in Cloudflare edge caching for reads</li>
+        <li>sub2apipay already uses Prisma ORM — native fit</li>
+        <li>⚠️ 100K ops limit — fine for <10K orders/month</li>
+        <li>⚠️ Only 10 pooled connections on free tier</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="both" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Start with Prisma, fallback to Supabase</h3>
+      <p><strong>Best if:</strong> You want isolation now but have a safety net.</p>
+      <ul style="font-size:13px;margin-top:8px;">
+        <li>Use Prisma Postgres free tier for payments (isolated, always-on)</li>
+        <li>If you outgrow 100K ops, switch DATABASE_URL to Supabase — Prisma ORM works with both</li>
+        <li>One env var change, zero code changes</li>
+      </ul>
+    </div>
+  </div>
+</div>

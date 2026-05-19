@@ -10,6 +10,7 @@ import (
 	dbent "github.com/shudonglin/sub2api/ent"
 	"github.com/shudonglin/sub2api/internal/config"
 	"github.com/shudonglin/sub2api/internal/payment"
+	"github.com/shudonglin/sub2api/internal/pkg/antigravity"
 	"github.com/shudonglin/sub2api/internal/pkg/logger"
 )
 
@@ -395,6 +396,7 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	svc := NewSettingService(settingRepo, cfg)
 	svc.SetDefaultSubscriptionGroupReader(groupRepo)
 	svc.SetProxyRepository(proxyRepo)
+	antigravity.SetUserAgentVersionResolver(svc.GetAntigravityUserAgentVersion)
 	return svc
 }
 
@@ -509,6 +511,7 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
+	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
 	NewPaymentService,

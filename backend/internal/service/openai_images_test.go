@@ -90,6 +90,51 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
 }
 
+func TestOpenAIImagesRequestModerationBody_JSONEditIncludesInputImageURLs(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint:       openAIImagesEditsEndpoint,
+		Prompt:         "replace background",
+		InputImageURLs: []string{"https://example.com/source.png"},
+		MaskImageURL:   "https://example.com/mask.png",
+	}
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, parsed.ModerationBody())
+
+	require.Equal(t, "replace background", input.Text)
+	require.Equal(t, []string{"https://example.com/source.png", "https://example.com/mask.png"}, input.Images)
+}
+
+func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(t *testing.T) {
+	parsed := &OpenAIImagesRequest{
+		Endpoint: openAIImagesEditsEndpoint,
+		Prompt:   "replace background",
+		Uploads: []OpenAIImagesUpload{{
+			FieldName:   "image",
+			FileName:    "source.png",
+			ContentType: "image/png",
+			Data:        []byte("fake-image-bytes"),
+		}},
+		MaskUpload: &OpenAIImagesUpload{
+			FieldName:   "mask",
+			FileName:    "mask.png",
+			ContentType: "image/png",
+			Data:        []byte("fake-mask-bytes"),
+		},
+	}
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, parsed.ModerationBody())
+
+	require.Equal(t, "replace background", input.Text)
+	require.Equal(t, []string{
+		"data:image/png;base64,ZmFrZS1pbWFnZS1ieXRlcw==",
+		"data:image/png;base64,ZmFrZS1tYXNrLWJ5dGVz",
+	}, input.Images)
+
+	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, defaultContentModerationConfig(), ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
+	require.Equal(t, "replace background", log.InputExcerpt)
+	require.NotContains(t, log.InputExcerpt, "ZmFrZS")
+}
+
 func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCustomSizes(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -104,9 +149,9 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_NormalizesOfficialAndCusto
 		{size: "2048x1152", wantTier: "2K"},
 		{size: "3840x2160", wantTier: "4K"},
 		{size: "2160x3840", wantTier: "4K"},
-		{size: "1024X768", wantTier: "2K"},
+		{size: "1024X768", wantTier: "1K"},
 		{size: "1280x768", wantTier: "2K"},
-		{size: "2560x1440", wantTier: "2K"},
+		{size: "2560x1440", wantTier: "4K"},
 		{size: "2560x1600", wantTier: "4K"},
 		{size: "auto", wantTier: "2K"},
 	}
@@ -141,7 +186,7 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_UnknownSizesDoNotBlockPass
 		{size: "2048x1153", wantTier: "2K"},
 		{size: "4096x1024", wantTier: "4K"},
 		{size: "3840x1024", wantTier: "4K"},
-		{size: "512x512", wantTier: "2K"},
+		{size: "512x512", wantTier: "1K"},
 		{size: "invalid", wantTier: "2K"},
 		{size: "999999999999999999999999999x2", wantTier: "2K"},
 	}
@@ -372,6 +417,10 @@ func TestBuildOpenAIImagesURL_HandlesVersionedBaseURL(t *testing.T) {
 	require.Equal(t,
 		"https://image-upstream.example/v1/images/generations",
 		buildOpenAIImagesURL("https://image-upstream.example/v1", openAIImagesGenerationsEndpoint),
+	)
+	require.Equal(t,
+		"https://open.bigmodel.cn/api/paas/v4/images/generations",
+		buildOpenAIImagesURL("https://open.bigmodel.cn/api/paas/v4", openAIImagesGenerationsEndpoint),
 	)
 	require.Equal(t,
 		"https://image-upstream.example/v1/images/edits",
