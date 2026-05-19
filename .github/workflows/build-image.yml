@@ -1,9 +1,10 @@
 name: Build & publish edge image
 
 # On every merge to main, build the container image and push it to GHCR as
-# :edge. The Oracle VM (sub2api-infra) runs watchtower, which tracks :edge and
-# redeploys automatically. Tagged releases are handled separately by
-# release.yml and own the :latest tag — this workflow never touches :latest.
+# :latest. The Oracle VM (sub2api-infra) runs watchtower, which tracks :latest
+# and redeploys automatically. Tagged releases (release.yml) publish versioned
+# tags only — they intentionally no longer push GHCR :latest, so :latest
+# always means "newest main".
 on:
   push:
     branches: [main]
@@ -54,7 +55,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ steps.img.outputs.image }}:edge
+            ${{ steps.img.outputs.image }}:latest
             ${{ steps.img.outputs.image }}:main-${{ steps.img.outputs.sha }}
 
       - name: Summary
