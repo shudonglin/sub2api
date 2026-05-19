@@ -98,6 +98,27 @@ describe("admin settings auth source defaults helpers", () => {
         grant_on_signup: false,
         grant_on_first_bind: false,
       },
+      github: {
+        balance: 3,
+        concurrency: 4,
+        subscriptions: [],
+        grant_on_signup: true,
+        grant_on_first_bind: false,
+      },
+      google: {
+        balance: 5,
+        concurrency: 7,
+        subscriptions: [{ group_id: 11, validity_days: 14 }],
+        grant_on_signup: false,
+        grant_on_first_bind: true,
+      },
+      dingtalk: {
+        balance: 1,
+        concurrency: 3,
+        subscriptions: [],
+        grant_on_signup: true,
+        grant_on_first_bind: true,
+      },
     });
 
     expect(payload).toMatchObject({
@@ -126,6 +147,23 @@ describe("admin settings auth source defaults helpers", () => {
       auth_source_default_wechat_subscriptions: [],
       auth_source_default_wechat_grant_on_signup: false,
       auth_source_default_wechat_grant_on_first_bind: false,
+      auth_source_default_github_balance: 3,
+      auth_source_default_github_concurrency: 4,
+      auth_source_default_github_subscriptions: [],
+      auth_source_default_github_grant_on_signup: true,
+      auth_source_default_github_grant_on_first_bind: false,
+      auth_source_default_google_balance: 5,
+      auth_source_default_google_concurrency: 7,
+      auth_source_default_google_subscriptions: [
+        { group_id: 11, validity_days: 14 },
+      ],
+      auth_source_default_google_grant_on_signup: false,
+      auth_source_default_google_grant_on_first_bind: true,
+      auth_source_default_dingtalk_balance: 1,
+      auth_source_default_dingtalk_concurrency: 3,
+      auth_source_default_dingtalk_subscriptions: [],
+      auth_source_default_dingtalk_grant_on_signup: true,
+      auth_source_default_dingtalk_grant_on_first_bind: true,
     });
   });
 });

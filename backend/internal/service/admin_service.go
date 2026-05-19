@@ -34,6 +34,7 @@ type AdminService interface {
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
+	BatchUpdateConcurrency(ctx context.Context, userIDs []int64, value int, mode string) (int, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error)
@@ -818,6 +819,39 @@ func (s *adminServiceImpl) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *adminServiceImpl) BatchUpdateConcurrency(ctx context.Context, userIDs []int64, value int, mode string) (int, error) {
+	cleaned := make([]int64, 0, len(userIDs))
+	for _, uid := range userIDs {
+		if uid > 0 {
+			cleaned = append(cleaned, uid)
+		}
+	}
+	if len(cleaned) == 0 {
+		return 0, nil
+	}
+
+	var affected int
+	var err error
+	switch mode {
+	case "set":
+		affected, err = s.userRepo.BatchSetConcurrency(ctx, cleaned, value)
+	case "add":
+		affected, err = s.userRepo.BatchAddConcurrency(ctx, cleaned, value)
+	default:
+		return 0, errors.New("invalid mode: must be 'set' or 'add'")
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	if s.authCacheInvalidator != nil {
+		for _, uid := range cleaned {
+			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, uid)
+		}
+	}
+	return affected, nil
+}
+
 func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error) {
 	user, err := s.userRepo.GetByID(ctx, userID)
 	if err != nil {
@@ -1205,7 +1239,7 @@ func (s *adminServiceImpl) BindUserAuthIdentity(ctx context.Context, userID int6
 	providerKey := strings.TrimSpace(input.ProviderKey)
 	providerSubject := strings.TrimSpace(input.ProviderSubject)
 	if providerType == "" {
-		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type must be one of email, linuxdo, oidc, or wechat")
+		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type must be one of email, linuxdo, oidc, wechat, or dingtalk")
 	}
 	if providerKey == "" || providerSubject == "" {
 		return nil, infraerrors.BadRequest("INVALID_INPUT", "provider_type, provider_key, and provider_subject are required")
@@ -1460,6 +1494,8 @@ func normalizeAdminAuthIdentityProviderType(input string) string {
 		return "oidc"
 	case "wechat":
 		return "wechat"
+	case "dingtalk":
+		return "dingtalk"
 	default:
 		return ""
 	}

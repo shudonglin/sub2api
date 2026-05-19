@@ -104,8 +104,25 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 
+		// 风控中心
+		registerContentModerationRoutes(admin, h)
+
 		// 邀请返利（专属用户管理）
 		registerAffiliateRoutes(admin, h)
+	}
+}
+
+func registerContentModerationRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	risk := admin.Group("/risk-control")
+	{
+		risk.GET("/config", h.Admin.ContentModeration.GetConfig)
+		risk.PUT("/config", h.Admin.ContentModeration.UpdateConfig)
+		risk.POST("/api-keys/test", h.Admin.ContentModeration.TestAPIKeys)
+		risk.GET("/status", h.Admin.ContentModeration.GetStatus)
+		risk.GET("/logs", h.Admin.ContentModeration.ListLogs)
+		risk.POST("/users/:user_id/unban", h.Admin.ContentModeration.UnbanUser)
+		risk.DELETE("/hashes", h.Admin.ContentModeration.DeleteFlaggedHash)
+		risk.DELETE("/hashes/all", h.Admin.ContentModeration.ClearFlaggedHashes)
 	}
 }
 
@@ -240,6 +257,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		users.GET("/:id/balance-history", h.Admin.User.GetBalanceHistory)
 		users.POST("/:id/replace-group", h.Admin.User.ReplaceGroup)
 		users.GET("/:id/rpm-status", h.Admin.User.GetUserRPMStatus)
+		users.POST("/batch-concurrency", h.Admin.User.BatchUpdateConcurrency)
 
 		// User attribute values
 		users.GET("/:id/attributes", h.Admin.UserAttribute.GetUserAttributes)
@@ -276,6 +294,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
+		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
 		accounts.PUT("/:id", h.Admin.Account.Update)
@@ -296,6 +315,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.DELETE("/:id/temp-unschedulable", h.Admin.Account.ClearTempUnschedulable)
 		accounts.POST("/:id/schedulable", h.Admin.Account.SetSchedulable)
 		accounts.GET("/:id/models", h.Admin.Account.GetAvailableModels)
+		accounts.POST("/:id/models/sync-upstream", h.Admin.Account.SyncUpstreamModels)
 		accounts.POST("/batch", h.Admin.Account.BatchCreate)
 		accounts.GET("/data", h.Admin.Account.ExportData)
 		accounts.POST("/data", h.Admin.Account.ImportData)

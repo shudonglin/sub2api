@@ -199,7 +199,10 @@ func (m *mockUserRepo) ExistsByEmail(context.Context, string) (bool, error) { re
 func (m *mockUserRepo) RemoveGroupFromAllowedGroups(context.Context, int64) (int64, error) {
 	return 0, nil
 }
-func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) error { return nil }
+
+func (m *mockUserRepo) BatchSetConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
+func (m *mockUserRepo) BatchAddConcurrency(context.Context, []int64, int) (int, error) { return 0, nil }
+func (m *mockUserRepo) AddGroupToAllowedGroups(context.Context, int64, int64) error    { return nil }
 func (m *mockUserRepo) ListUserAuthIdentities(context.Context, int64) ([]UserAuthIdentityRecord, error) {
 	out := make([]UserAuthIdentityRecord, len(m.identities))
 	copy(out, m.identities)

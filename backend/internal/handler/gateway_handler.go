@@ -19,6 +19,7 @@ import (
 	"github.com/shudonglin/sub2api/internal/pkg/claude"
 	"github.com/shudonglin/sub2api/internal/pkg/ctxkey"
 	pkgerrors "github.com/shudonglin/sub2api/internal/pkg/errors"
+	"github.com/shudonglin/sub2api/internal/pkg/geminicli"
 	pkghttputil "github.com/shudonglin/sub2api/internal/pkg/httputil"
 	"github.com/shudonglin/sub2api/internal/pkg/ip"
 	"github.com/shudonglin/sub2api/internal/pkg/logger"
@@ -47,6 +48,7 @@ type GatewayHandler struct {
 	apiKeyService             *service.APIKeyService
 	usageRecordWorkerPool     *service.UsageRecordWorkerPool
 	errorPassthroughService   *service.ErrorPassthroughService
+	contentModerationService  *service.ContentModerationService
 	concurrencyHelper         *ConcurrencyHelper
 	userMsgQueueHelper        *UserMsgQueueHelper
 	maxAccountSwitches        int
@@ -67,6 +69,7 @@ func NewGatewayHandler(
 	apiKeyService *service.APIKeyService,
 	usageRecordWorkerPool *service.UsageRecordWorkerPool,
 	errorPassthroughService *service.ErrorPassthroughService,
+	contentModerationService *service.ContentModerationService,
 	userMsgQueueService *service.UserMessageQueueService,
 	cfg *config.Config,
 	settingService *service.SettingService,
@@ -100,6 +103,7 @@ func NewGatewayHandler(
 		apiKeyService:             apiKeyService,
 		usageRecordWorkerPool:     usageRecordWorkerPool,
 		errorPassthroughService:   errorPassthroughService,
+		contentModerationService:  contentModerationService,
 		concurrencyHelper:         NewConcurrencyHelper(concurrencyService, SSEPingFormatClaude, pingInterval),
 		userMsgQueueHelper:        umqHelper,
 		maxAccountSwitches:        maxAccountSwitches,
@@ -188,6 +192,11 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 	// 验证 model 必填
 	if reqModel == "" {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", "model is required")
+		return
+	}
+
+	if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && decision.Blocked {
+		h.errorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
 	}
 
@@ -316,6 +325,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), apiKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, "", int64(0)) // Gemini 不使用会话限制
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
+					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					reqLog.Warn("gateway.select_account_no_available",
 						zap.String("model", reqModel),
 						zap.Int64p("group_id", apiKey.GroupID),
@@ -365,6 +375,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
 				if selection.WaitPlan == nil {
+					markOpsRoutingCapacityLimited(c)
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
 						zap.Int64("account_id", account.ID),
 						zap.String("model", reqModel),
@@ -557,6 +568,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			selection, err := h.gatewayService.SelectAccountWithLoadAwareness(c.Request.Context(), currentAPIKey.GroupID, sessionKey, reqModel, fs.FailedAccountIDs, parsedReq.MetadataUserID, subject.UserID)
 			if err != nil {
 				if len(fs.FailedAccountIDs) == 0 {
+					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					reqLog.Warn("gateway.select_account_no_available",
 						zap.String("model", reqModel),
 						zap.Int64p("group_id", currentAPIKey.GroupID),
@@ -617,6 +629,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			accountReleaseFunc := selection.ReleaseFunc
 			if !selection.Acquired {
 				if selection.WaitPlan == nil {
+					markOpsRoutingCapacityLimited(c)
 					reqLog.Warn("gateway.select_account_no_slot_no_wait_plan",
 						zap.Int64("account_id", account.ID),
 						zap.String("model", reqModel),
@@ -941,8 +954,8 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	// 3-tier 平台解析：ForcePlatform > requested_platform > Group.Platform
 	platform := middleware2.ResolvePlatform(c, apiKey)
 
-	// Get available models from account configurations (without platform filter)
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	// Get available models from account configurations for the selected group platform.
+	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 
 	if len(availableModels) > 0 {
 		// Build model list from whitelist
@@ -963,10 +976,18 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 	}
 
 	// Fallback to default models
-	if platform == "openai" {
+	if platform == service.PlatformOpenAI {
 		c.JSON(http.StatusOK, gin.H{
 			"object": "list",
 			"data":   openai.DefaultModels,
+		})
+		return
+	}
+
+	if platform == service.PlatformGemini {
+		c.JSON(http.StatusOK, gin.H{
+			"object": "list",
+			"data":   geminicli.DefaultModels,
 		})
 		return
 	}
@@ -1537,6 +1558,7 @@ func (h *GatewayHandler) CountTokens(c *gin.Context) {
 	account, err := h.gatewayService.SelectAccountForModel(c.Request.Context(), apiKey.GroupID, sessionHash, parsedReq.Model)
 	if err != nil {
 		reqLog.Warn("gateway.count_tokens_select_account_failed", zap.Error(err))
+		markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 		h.errorResponse(c, http.StatusServiceUnavailable, "api_error", "Service temporarily unavailable")
 		return
 	}

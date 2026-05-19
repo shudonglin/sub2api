@@ -267,9 +267,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	// omits "model" — Realtime clients are allowed to send response.create
 	// without re-stating the model, in which case the upstream uses the model
 	// negotiated at session.update time. Without this fallback, an empty
-	// model would miss the default ["gpt-5.5","gpt-5.5*"] whitelist and be
-	// silently passed through, defeating the policy on every frame after
-	// the first.
+	// model would miss any admin-configured model whitelist and be silently
+	// passed through, defeating that policy on every frame after the first.
 	capturedSessionModel := openAIWSPassthroughPolicyModelForFrame(account, firstClientMessage)
 	initialRequestModel := ""
 	if hooks != nil {
@@ -386,6 +385,19 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		filter: func(msgType coderws.MessageType, payload []byte) ([]byte, *OpenAIFastBlockedError, error) {
 			if msgType != coderws.MessageText {
 				return payload, nil, nil
+			}
+			if strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" && hooks != nil && hooks.BeforeRequest != nil {
+				turnNo := int(completedTurns.Load()) + 1
+				if turnNo < 2 {
+					turnNo = 2
+				}
+				requestModel := usageMeta.requestModelForFrame(payload)
+				if requestModel == "" {
+					requestModel = capturedSessionModel
+				}
+				if err := hooks.BeforeRequest(turnNo, payload, requestModel); err != nil {
+					return payload, nil, err
+				}
 			}
 			// 在评估策略前先刷新 capturedSessionModel：客户端可能通过
 			// session.update 修改 session-level model（Realtime /

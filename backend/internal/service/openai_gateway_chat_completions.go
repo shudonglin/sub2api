@@ -49,10 +49,10 @@ var cursorResponsesUnsupportedFields = []string{
 // 正确的，但 sub2api 接入 DeepSeek/Kimi/GLM 等第三方 OpenAI 兼容上游后假设破裂：
 // 这些上游普遍只支持 /v1/chat/completions，无 /v1/responses 端点。
 //
-// 当前路由策略（基于账号探测标记，详见 openai_compat.ShouldUseResponsesAPI）：
-//   - APIKey 账号 + 探测确认不支持 Responses → 走 forwardAsRawChatCompletions
+// 当前路由策略（基于账号覆盖模式/探测标记，详见 openai_compat.ShouldUseResponsesAPI）：
+//   - APIKey 账号 + 强制或探测确认不支持 Responses → 走 forwardAsRawChatCompletions
 //     直转上游 /v1/chat/completions，不做协议转换
-//   - 其他所有情况（OAuth、APIKey 探测确认支持、未探测）→ 走原有 CC→Responses
+//   - 其他所有情况（OAuth、APIKey 强制/探测确认支持、未探测）→ 走原有 CC→Responses
 //     转换路径（保留旧行为，存量未探测账号零兼容破坏）
 func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	ctx context.Context,
@@ -62,8 +62,8 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
-	// 入口分流：APIKey 账号 + 已探测且确认上游不支持 Responses，走 CC 直转。
-	// 标记缺失（未探测）按"现状即证据"原则继续走下方原 Responses 转换路径。
+	// 入口分流：APIKey 账号 + 强制或已探测确认上游不支持 Responses，走 CC 直转。
+	// 自动模式下标记缺失（未探测）按"现状即证据"原则继续走下方原 Responses 转换路径。
 	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
 		return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 	}
@@ -248,6 +248,16 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 		upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 		upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
+		if account.Type == AccountTypeAPIKey &&
+			openai_compat.ResolveResponsesSupport(account.Extra) == openai_compat.ResponsesSupportUnknown &&
+			!isResponsesEndpointSupportedByStatus(resp.StatusCode) {
+			logger.L().Info("openai chat_completions: /responses unsupported, falling back to raw chat completions",
+				zap.Int64("account_id", account.ID),
+				zap.Int("upstream_status", resp.StatusCode),
+				zap.String("upstream_message", upstreamMsg),
+			)
+			return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+		}
 		if s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody) {
 			upstreamDetail := ""
 			if s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
@@ -555,6 +565,13 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 	missingTerminalErr := func() (*OpenAIForwardResult, error) {
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
+	processFrame := func(frame openAICompatSSEFrame) bool {
+		payload := openAICompatPayloadWithEventType(frame.Data, frame.EventType)
+		if strings.TrimSpace(payload) == "[DONE]" {
+			return false
+		}
+		return processDataLine(payload)
+	}
 
 	// Determine keepalive interval
 	keepaliveInterval := time.Duration(0)
@@ -564,22 +581,31 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 
 	// No keepalive: fast synchronous path
 	if streamInterval <= 0 && keepaliveInterval <= 0 {
+		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 		}
 		if err := scanner.Err(); err != nil {
 			handleScanErr(err)
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", err)
+		}
+		if frame, ok := parser.Finish(); ok {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
+				return missingTerminalErr()
+			}
+			if processFrame(frame) {
+				return finalizeStream()
+			}
 		}
 		return missingTerminalErr()
 	}
@@ -625,11 +651,20 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 		keepaliveCh = keepaliveTicker.C
 	}
 	lastDataAt := time.Now()
+	var parser openAICompatSSEFrameParser
 
 	for {
 		select {
 		case ev, ok := <-events:
 			if !ok {
+				if frame, ok := parser.Finish(); ok {
+					if strings.TrimSpace(frame.Data) == "[DONE]" {
+						return missingTerminalErr()
+					}
+					if processFrame(frame) {
+						return finalizeStream()
+					}
+				}
 				return missingTerminalErr()
 			}
 			if ev.err != nil {
@@ -638,14 +673,14 @@ func (s *OpenAIGatewayService) handleChatStreamingResponse(
 			}
 			lastDataAt = time.Now()
 			line := ev.line
-			payload, ok := extractOpenAISSEDataLine(line)
+			frame, ok := parser.AddLine(line)
 			if !ok {
 				continue
 			}
-			if strings.TrimSpace(payload) == "[DONE]" {
+			if strings.TrimSpace(frame.Data) == "[DONE]" {
 				return missingTerminalErr()
 			}
-			if processDataLine(payload) {
+			if processFrame(frame) {
 				return finalizeStream()
 			}
 

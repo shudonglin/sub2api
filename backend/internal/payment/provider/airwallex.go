@@ -1,22 +1,3 @@
-// Package provider implements payment provider integrations.
-//
-// Airwallex provider:
-//
-// Implements the Hosted Payment Page (HPP) flow against Airwallex's
-// PaymentIntent API. The provider authenticates with a short-lived bearer
-// token (cached, refreshed 1 minute before upstream expiry), creates a
-// PaymentIntent, and returns an HPP redirect URL the user is redirected to.
-// Webhook events are verified with HMAC-SHA256 over `timestamp + rawBody`
-// against the configured webhook secret.
-//
-// Required config keys (JSON in payment_provider_instances.config):
-//   - clientId       — Airwallex client ID
-//   - apiKey         — Airwallex API key
-//   - webhookSecret  — secret used to verify webhook HMAC signatures
-//   - environment    — "demo" or "prod" (default "prod")
-//   - currency       — "USD" | "CNY" | "SGD" (default "USD")
-//   - notifyUrl      — webhook destination URL (informational, set in dashboard)
-//   - returnUrl      — browser return URL after payment (overridable per request)
 package provider
 
 import (
@@ -36,499 +17,635 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
-
 	"github.com/shudonglin/sub2api/internal/payment"
 )
 
-// Airwallex environments and base URLs.
 const (
-	airwallexEnvDemo = "demo"
-	airwallexEnvProd = "prod"
+	airwallexDemoAPIBase      = "https://api-demo.airwallex.com/api/v1"
+	airwallexProdAPIBase      = "https://api.airwallex.com/api/v1"
+	airwallexDefaultCountry   = "CN"
+	airwallexHTTPTimeout      = 15 * time.Second
+	airwallexMaxResponseSize  = 1 << 20
+	airwallexMaxErrorSummary  = 512
+	airwallexTokenSkew        = 2 * time.Minute
+	airwallexWebhookTolerance = 5 * time.Minute
 
-	airwallexAPIBaseDemo = "https://api-demo.airwallex.com"
-	airwallexAPIBaseProd = "https://api.airwallex.com"
+	airwallexEventPaymentSucceeded = "payment_intent.succeeded"
+	airwallexEventPaymentCancelled = "payment_intent.cancelled"
 
-	// airwallexTokenRefreshSkew refreshes the cached bearer token this much
-	// before upstream expiry to avoid edge-case 401s.
-	airwallexTokenRefreshSkew = 60 * time.Second
-
-	// airwallexHTTPTimeout caps every Airwallex API HTTP call.
-	airwallexHTTPTimeout = 30 * time.Second
-
-	// airwallexEventSucceeded / Failed / Cancelled — webhook event names.
-	// TODO: airwallexEventFailed ("payment_intent.payment_failed") is not emitted by
-	// the current Airwallex API. Card auth/charge failures fire as
-	// "payment_attempt.failed_to_process" instead. Today a failed card leaves the
-	// order PENDING until order_timeout_minutes elapses. To surface failures sooner,
-	// add a payment_attempt.failed_to_process branch in HandleWebhookNotification
-	// that resolves the parent payment_intent → mark the order failed, and subscribe
-	// to that event in the Airwallex dashboard webhook config.
-	airwallexEventSucceeded = "payment_intent.succeeded"
-	airwallexEventFailed    = "payment_intent.payment_failed"
-	airwallexEventCancelled = "payment_intent.cancelled"
-
-	airwallexStatusSucceeded = "SUCCEEDED"
-	airwallexStatusCancelled = "CANCELLED"
-	airwallexStatusExpired   = "EXPIRED"
-
-	airwallexDefaultCurrency = "USD"
+	airwallexPaymentStatusSucceeded = "SUCCEEDED"
+	airwallexPaymentStatusCancelled = "CANCELLED"
+	airwallexRefundStatusReceived   = "RECEIVED"
+	airwallexRefundStatusAccepted   = "ACCEPTED"
+	airwallexRefundStatusSettled    = "SETTLED"
+	airwallexRefundStatusFailed     = "FAILED"
 )
 
-// supportedAirwallexCurrencies enumerates currencies accepted by this provider.
-// Airwallex itself supports many more, but we restrict to the set the
-// downstream order/billing flow understands.
-var supportedAirwallexCurrencies = map[string]struct{}{
-	"USD": {},
-	"CNY": {},
-	"SGD": {},
-}
-
-// Airwallex implements payment.Provider for Airwallex hosted payments.
 type Airwallex struct {
 	instanceID string
 	config     map[string]string
-
 	httpClient *http.Client
-
-	tokenMu     sync.Mutex
-	cachedToken string
-	tokenExpiry time.Time
 }
 
-// NewAirwallex constructs an Airwallex provider from a decrypted config map.
+type airwallexTokenState struct {
+	mu        sync.Mutex
+	token     string
+	expiresAt time.Time
+}
+
+var airwallexAccessTokens sync.Map
+
 func NewAirwallex(instanceID string, config map[string]string) (*Airwallex, error) {
-	if config["clientId"] == "" {
-		return nil, fmt.Errorf("airwallex config missing required key: clientId")
-	}
-	if config["apiKey"] == "" {
-		return nil, fmt.Errorf("airwallex config missing required key: apiKey")
-	}
-	if env := config["environment"]; env != "" && env != airwallexEnvDemo && env != airwallexEnvProd {
-		return nil, fmt.Errorf("airwallex config invalid environment %q (want %q or %q)", env, airwallexEnvDemo, airwallexEnvProd)
-	}
-	if cur := strings.ToUpper(strings.TrimSpace(config["currency"])); cur != "" {
-		if _, ok := supportedAirwallexCurrencies[cur]; !ok {
-			return nil, fmt.Errorf("airwallex config unsupported currency %q (want USD, CNY or SGD)", cur)
+	cfg := cloneStringMap(config)
+	// Backward compatibility: provider instances created before the upstream
+	// sync stored an `environment` (demo|prod) key and derived the API base
+	// from it. Upstream now expects an explicit `apiBase`. Bridge the old
+	// configs so pre-existing Airwallex instances keep working unchanged.
+	if strings.TrimSpace(cfg["apiBase"]) == "" {
+		switch strings.ToLower(strings.TrimSpace(cfg["environment"])) {
+		case "demo":
+			cfg["apiBase"] = airwallexDemoAPIBase
+		case "prod", "production":
+			cfg["apiBase"] = airwallexProdAPIBase
 		}
 	}
+	for _, k := range []string{"clientId", "apiKey", "webhookSecret", "apiBase"} {
+		if strings.TrimSpace(cfg[k]) == "" {
+			return nil, fmt.Errorf("airwallex config missing required key: %s", k)
+		}
+	}
+	apiBase, err := normalizeAirwallexAPIBase(cfg["apiBase"])
+	if err != nil {
+		return nil, err
+	}
+	cfg["apiBase"] = apiBase
+	currency, err := payment.NormalizePaymentCurrency(cfg["currency"])
+	if err != nil {
+		return nil, fmt.Errorf("airwallex config currency: %w", err)
+	}
+	cfg["currency"] = currency
+	countryCode, err := normalizeAirwallexCountryCode(cfg["countryCode"])
+	if err != nil {
+		return nil, err
+	}
+	cfg["countryCode"] = countryCode
 	return &Airwallex{
 		instanceID: instanceID,
-		config:     config,
+		config:     cfg,
 		httpClient: &http.Client{Timeout: airwallexHTTPTimeout},
 	}, nil
 }
 
-// Name returns the human-readable provider name.
-func (a *Airwallex) Name() string {
-	if a.instanceID != "" {
-		return "airwallex:" + a.instanceID
+func normalizeAirwallexCountryCode(raw string) (string, error) {
+	countryCode := strings.ToUpper(strings.TrimSpace(raw))
+	if countryCode == "" {
+		return airwallexDefaultCountry, nil
 	}
-	return "Airwallex"
+	if len(countryCode) != 2 {
+		return "", fmt.Errorf("airwallex config countryCode must be a two-letter ISO country code")
+	}
+	for _, ch := range countryCode {
+		if ch < 'A' || ch > 'Z' {
+			return "", fmt.Errorf("airwallex config countryCode must be a two-letter ISO country code")
+		}
+	}
+	return countryCode, nil
 }
 
-// ProviderKey returns the provider key.
-func (a *Airwallex) ProviderKey() string { return payment.TypeAirwallex }
+func normalizeAirwallexAPIBase(raw string) (string, error) {
+	base := strings.TrimSpace(raw)
+	if base == "" {
+		return "", fmt.Errorf("airwallex apiBase is required")
+	}
+	parsed, err := url.Parse(base)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("airwallex apiBase must be an HTTPS URL")
+	}
+	host := strings.ToLower(parsed.Host)
+	if host != "api-demo.airwallex.com" && host != "api.airwallex.com" {
+		return "", fmt.Errorf("airwallex apiBase host must be api-demo.airwallex.com or api.airwallex.com")
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.RawPath = ""
+	parsed.Path = strings.TrimRight(parsed.Path, "/")
+	if parsed.Path == "" {
+		parsed.Path = "/api/v1"
+	}
+	if parsed.Path != "/api/v1" {
+		return "", fmt.Errorf("airwallex apiBase path must be /api/v1")
+	}
+	return parsed.String(), nil
+}
 
-// SupportedTypes returns the payment types this provider handles.
+func (a *Airwallex) Name() string        { return "空中云汇" }
+func (a *Airwallex) ProviderKey() string { return payment.TypeAirwallex }
 func (a *Airwallex) SupportedTypes() []payment.PaymentType {
 	return []payment.PaymentType{payment.TypeAirwallex}
 }
 
-// environment returns the configured environment, defaulting to prod.
-func (a *Airwallex) environment() string {
-	if e := a.config["environment"]; e == airwallexEnvDemo {
-		return airwallexEnvDemo
-	}
-	return airwallexEnvProd
-}
-
-// currency returns the configured currency, defaulting to USD.
-func (a *Airwallex) currency() string {
-	if c := strings.ToUpper(strings.TrimSpace(a.config["currency"])); c != "" {
-		return c
-	}
-	return airwallexDefaultCurrency
-}
-
-// apiBase returns the Airwallex REST API base URL for the configured environment.
-func (a *Airwallex) apiBase() string {
-	if a.environment() == airwallexEnvDemo {
-		return airwallexAPIBaseDemo
-	}
-	return airwallexAPIBaseProd
-}
-
-// ── Auth token cache ─────────────────────────────────────────────────────────
-
-type airwallexAuthResponse struct {
-	Token     string `json:"token"`
-	ExpiresAt string `json:"expires_at"`
-}
-
-// getAuthToken returns a valid bearer token, refreshing the cached one if
-// it is missing or close to expiry. Safe for concurrent use.
-func (a *Airwallex) getAuthToken(ctx context.Context) (string, error) {
-	a.tokenMu.Lock()
-	defer a.tokenMu.Unlock()
-
-	if a.cachedToken != "" && time.Now().Add(airwallexTokenRefreshSkew).Before(a.tokenExpiry) {
-		return a.cachedToken, nil
-	}
-
-	reqURL := a.apiBase() + "/api/v1/authentication/login"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
-	if err != nil {
-		return "", fmt.Errorf("airwallex auth: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("x-client-id", a.config["clientId"])
-	req.Header.Set("x-api-key", a.config["apiKey"])
-
-	body, err := a.doHTTP(req)
-	if err != nil {
-		return "", fmt.Errorf("airwallex auth: %w", err)
-	}
-
-	var auth airwallexAuthResponse
-	if err := json.Unmarshal(body, &auth); err != nil {
-		return "", fmt.Errorf("airwallex auth: decode response: %w", err)
-	}
-	if auth.Token == "" {
-		return "", fmt.Errorf("airwallex auth: empty token in response")
-	}
-
-	expiry, err := time.Parse(time.RFC3339, auth.ExpiresAt)
-	if err != nil {
-		// Some Airwallex responses use RFC3339 with fractional seconds; try a fallback.
-		expiry, err = time.Parse("2006-01-02T15:04:05.000Z", auth.ExpiresAt)
-		if err != nil {
-			// Fall back to a conservative 15-minute window so we don't cache forever.
-			expiry = time.Now().Add(15 * time.Minute)
-		}
-	}
-
-	a.cachedToken = auth.Token
-	a.tokenExpiry = expiry
-	return a.cachedToken, nil
-}
-
-// ── HTTP helpers ─────────────────────────────────────────────────────────────
-
-// doHTTP performs the request, reads the body, and converts non-2xx into an
-// error containing the upstream payload.
-func (a *Airwallex) doHTTP(req *http.Request) ([]byte, error) {
-	resp, err := a.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("http request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("upstream status %d: %s", resp.StatusCode, string(body))
-	}
-	return body, nil
-}
-
-// apiRequest performs an authenticated JSON request against the Airwallex API
-// and unmarshals the response into out (if non-nil).
-func (a *Airwallex) apiRequest(ctx context.Context, method, path string, body, out any) error {
-	token, err := a.getAuthToken(ctx)
-	if err != nil {
-		return err
-	}
-
-	var bodyReader io.Reader
-	if body != nil {
-		buf, err := json.Marshal(body)
-		if err != nil {
-			return fmt.Errorf("airwallex %s %s: marshal body: %w", method, path, err)
-		}
-		bodyReader = bytes.NewReader(buf)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, a.apiBase()+path, bodyReader)
-	if err != nil {
-		return fmt.Errorf("airwallex %s %s: build request: %w", method, path, err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	respBody, err := a.doHTTP(req)
-	if err != nil {
-		return fmt.Errorf("airwallex %s %s: %w", method, path, err)
-	}
-	if out == nil {
+func (a *Airwallex) MerchantIdentityMetadata() map[string]string {
+	if a == nil {
 		return nil
 	}
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("airwallex %s %s: decode response: %w", method, path, err)
+	metadata := map[string]string{"currency": a.currency()}
+	if accountID := strings.TrimSpace(a.config["accountId"]); accountID != "" {
+		metadata["account_id"] = accountID
+	}
+	return metadata
+}
+
+func (a *Airwallex) currency() string {
+	if a == nil {
+		return payment.DefaultPaymentCurrency
+	}
+	currency, err := payment.NormalizePaymentCurrency(a.config["currency"])
+	if err != nil {
+		return payment.DefaultPaymentCurrency
+	}
+	return currency
+}
+
+func (a *Airwallex) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	amount, err := decimal.NewFromString(req.Amount)
+	if err != nil || amount.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("airwallex create payment: invalid amount %s", req.Amount)
+	}
+	token, err := a.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("airwallex auth: %w", err)
+	}
+
+	currency := a.currency()
+	requestID := airwallexDeterministicRequestID("payment-intent", req.OrderID, req.Amount, currency)
+	payload := airwallexCreatePaymentIntentRequest{
+		RequestID:       requestID,
+		Amount:          newAirwallexRequestAmount(amount),
+		Currency:        currency,
+		MerchantOrderID: req.OrderID,
+		ReturnURL:       req.ReturnURL,
+		Metadata: map[string]string{
+			"order_id": req.OrderID,
+		},
+	}
+	if descriptor := strings.TrimSpace(a.config["descriptor"]); descriptor != "" {
+		payload.Descriptor = descriptor
+	}
+
+	var intent airwallexPaymentIntent
+	if err := a.doJSON(ctx, http.MethodPost, "/pa/payment_intents/create", token, payload, &intent); err != nil {
+		return nil, fmt.Errorf("airwallex create payment: %w", err)
+	}
+	if strings.TrimSpace(intent.ID) == "" || strings.TrimSpace(intent.ClientSecret) == "" {
+		return nil, fmt.Errorf("airwallex create payment: missing payment intent id or client secret")
+	}
+	return &payment.CreatePaymentResponse{
+		TradeNo:      intent.ID,
+		ClientSecret: intent.ClientSecret,
+		IntentID:     intent.ID,
+		Currency:     currency,
+		CountryCode:  a.config["countryCode"],
+		PaymentEnv:   a.checkoutEnv(),
+	}, nil
+}
+
+func (a *Airwallex) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	intentID := strings.TrimSpace(tradeNo)
+	if intentID == "" {
+		return nil, fmt.Errorf("airwallex query order: missing payment intent id")
+	}
+	token, err := a.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("airwallex auth: %w", err)
+	}
+
+	var intent airwallexPaymentIntent
+	if err := a.doJSON(ctx, http.MethodGet, "/pa/payment_intents/"+url.PathEscape(intentID), token, nil, &intent); err != nil {
+		return nil, fmt.Errorf("airwallex query order: %w", err)
+	}
+	return &payment.QueryOrderResponse{
+		TradeNo:  intent.ID,
+		Status:   airwallexProviderStatus(intent.Status),
+		Amount:   intent.Amount.InexactFloat64(),
+		Metadata: a.intentMetadata(intent, ""),
+	}, nil
+}
+
+func (a *Airwallex) VerifyNotification(_ context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
+	if err := verifyAirwallexWebhookSignature(rawBody, headers, a.config["webhookSecret"], time.Now()); err != nil {
+		return nil, err
+	}
+
+	var event airwallexWebhookEvent
+	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
+		return nil, fmt.Errorf("airwallex parse webhook: %w", err)
+	}
+	switch event.Name {
+	case airwallexEventPaymentSucceeded, airwallexEventPaymentCancelled:
+	default:
+		return nil, nil
+	}
+
+	var intent airwallexPaymentIntent
+	if err := json.Unmarshal(event.Data.Object, &intent); err != nil {
+		return nil, fmt.Errorf("airwallex parse payment intent: %w", err)
+	}
+	if strings.TrimSpace(intent.ID) == "" || strings.TrimSpace(intent.MerchantOrderID) == "" {
+		return nil, fmt.Errorf("airwallex webhook missing payment intent id or merchant_order_id")
+	}
+	status := payment.ProviderStatusFailed
+	if event.Name == airwallexEventPaymentSucceeded {
+		if strings.ToUpper(strings.TrimSpace(intent.Status)) != airwallexPaymentStatusSucceeded {
+			return nil, fmt.Errorf("airwallex succeeded webhook has non-succeeded status: %s", intent.Status)
+		}
+		status = payment.NotificationStatusSuccess
+	}
+
+	return &payment.PaymentNotification{
+		TradeNo:  intent.ID,
+		OrderID:  intent.MerchantOrderID,
+		Amount:   intent.Amount.InexactFloat64(),
+		Status:   status,
+		RawData:  rawBody,
+		Metadata: a.intentMetadata(intent, event.accountID()),
+	}, nil
+}
+
+func (a *Airwallex) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
+	intentID := strings.TrimSpace(req.TradeNo)
+	if intentID == "" {
+		return nil, fmt.Errorf("airwallex refund missing payment intent id")
+	}
+	amount, err := decimal.NewFromString(req.Amount)
+	if err != nil || amount.LessThanOrEqual(decimal.Zero) {
+		return nil, fmt.Errorf("airwallex refund: invalid amount %s", req.Amount)
+	}
+	token, err := a.accessToken(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("airwallex auth: %w", err)
+	}
+
+	payload := airwallexCreateRefundRequest{
+		RequestID:       airwallexDeterministicRequestID("refund", intentID, req.Amount),
+		PaymentIntentID: intentID,
+		Amount:          newAirwallexRequestAmount(amount),
+		Reason:          strings.TrimSpace(req.Reason),
+	}
+	if payload.Reason == "" {
+		payload.Reason = "refund"
+	}
+
+	var resp airwallexRefund
+	if err := a.doJSON(ctx, http.MethodPost, "/pa/refunds/create", token, payload, &resp); err != nil {
+		return nil, fmt.Errorf("airwallex refund: %w", err)
+	}
+	if strings.TrimSpace(resp.ID) == "" {
+		return nil, fmt.Errorf("airwallex refund: missing refund id")
+	}
+	refundResp := &payment.RefundResponse{
+		RefundID: resp.ID,
+		Status:   airwallexRefundProviderStatus(resp.Status),
+	}
+	if refundResp.Status != payment.ProviderStatusSuccess {
+		return refundResp, fmt.Errorf("airwallex refund not settled: status %s", strings.ToUpper(strings.TrimSpace(resp.Status)))
+	}
+	return refundResp, nil
+}
+
+func (a *Airwallex) CancelPayment(ctx context.Context, tradeNo string) error {
+	intentID := strings.TrimSpace(tradeNo)
+	if intentID == "" {
+		return nil
+	}
+	token, err := a.accessToken(ctx)
+	if err != nil {
+		return fmt.Errorf("airwallex auth: %w", err)
+	}
+	var intent airwallexPaymentIntent
+	if err := a.doJSON(ctx, http.MethodPost, "/pa/payment_intents/"+url.PathEscape(intentID)+"/cancel", token, nil, &intent); err != nil {
+		return fmt.Errorf("airwallex cancel payment: %w", err)
 	}
 	return nil
 }
 
-// ── Payment Link / Refund payloads ───────────────────────────────────────────
-
-type airwallexRefund struct {
-	ID     string          `json:"id"`
-	Status string          `json:"status"`
-	Amount decimal.Decimal `json:"amount"`
+func (a *Airwallex) intentMetadata(intent airwallexPaymentIntent, accountID string) map[string]string {
+	metadata := map[string]string{
+		"currency": strings.ToUpper(strings.TrimSpace(intent.Currency)),
+		"status":   strings.ToUpper(strings.TrimSpace(intent.Status)),
+	}
+	if accountID = strings.TrimSpace(accountID); accountID != "" {
+		metadata["account_id"] = accountID
+	} else if configured := strings.TrimSpace(a.config["accountId"]); configured != "" {
+		metadata["account_id"] = configured
+	}
+	return metadata
 }
 
-// airwallexPaymentLinkReq is the request body for /api/v1/pa/payment_links/create.
-// Payment Links are Airwallex's hosted checkout product and the only flow that
-// returns a URL safe to redirect a browser to directly (pay-demo.airwallex.com/<short>).
-type airwallexPaymentLinkReq struct {
-	RequestID       string          `json:"request_id"`
-	MerchantOrderID string          `json:"merchant_order_id"`
-	Title           string          `json:"title"`
-	Amount          decimal.Decimal `json:"amount"`
-	Currency        string          `json:"currency"`
-	Metadata        map[string]any  `json:"metadata,omitempty"`
-	Reusable        bool            `json:"reusable"`
-	ReturnURL       string          `json:"return_url,omitempty"`
+func (a *Airwallex) checkoutEnv() string {
+	if strings.EqualFold(a.config["apiBase"], airwallexProdAPIBase) {
+		return "prod"
+	}
+	return "demo"
 }
 
-// airwallexPaymentLink is the response from payment_links/create. The `url`
-// field is the short hosted page URL we return as PayURL.
-type airwallexPaymentLink struct {
-	ID                           string          `json:"id"`
-	URL                          string          `json:"url"`
-	Status                       string          `json:"status"`
-	Amount                       decimal.Decimal `json:"amount"`
-	Currency                     string          `json:"currency"`
-	Active                       bool            `json:"active"`
-	SuccessfulPaymentIntentCount int             `json:"successful_payment_intent_count"`
-	Metadata                     map[string]any  `json:"metadata,omitempty"`
-}
+func (a *Airwallex) accessToken(ctx context.Context) (string, error) {
+	cacheKey := a.tokenCacheKey()
+	rawState, _ := airwallexAccessTokens.LoadOrStore(cacheKey, &airwallexTokenState{})
+	state, ok := rawState.(*airwallexTokenState)
+	if !ok {
+		return "", fmt.Errorf("airwallex auth token cache state type mismatch")
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
 
-type airwallexCreateRefundReq struct {
-	RequestID       string          `json:"request_id"`
-	PaymentIntentID string          `json:"payment_intent_id"`
-	Amount          decimal.Decimal `json:"amount"`
-	Reason          string          `json:"reason,omitempty"`
-}
+	if state.token != "" && time.Now().Add(airwallexTokenSkew).Before(state.expiresAt) {
+		return state.token, nil
+	}
 
-// ── Provider interface implementation ────────────────────────────────────────
-
-// CreatePayment creates an Airwallex Payment Link (hosted checkout) and
-// returns its short pay-demo.airwallex.com URL as the redirect target.
-// When the user completes payment on the hosted page, Airwallex fires a
-// payment_intent.succeeded webhook with merchant_order_id and metadata
-// inherited from this request, which VerifyNotification below matches back
-// to our internal order.
-func (a *Airwallex) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
-	amount, err := decimal.NewFromString(req.Amount)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.config["apiBase"]+"/authentication/login", nil)
 	if err != nil {
-		return nil, fmt.Errorf("airwallex create payment: invalid amount %q: %w", req.Amount, err)
+		return "", err
 	}
-	if amount.Sign() <= 0 {
-		return nil, fmt.Errorf("airwallex create payment: amount must be positive, got %q", req.Amount)
-	}
-
-	currency := a.currency()
-	returnURL := req.ReturnURL
-	if returnURL == "" {
-		returnURL = a.config["returnUrl"]
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-client-id", a.config["clientId"])
+	req.Header.Set("x-api-key", a.config["apiKey"])
+	if accountID := strings.TrimSpace(a.config["accountId"]); accountID != "" {
+		req.Header.Set("x-login-as", accountID)
 	}
 
-	title := req.Subject
-	if strings.TrimSpace(title) == "" {
-		title = fmt.Sprintf("%s %s", amount.String(), currency)
+	body, status, err := a.do(req)
+	if err != nil {
+		return "", err
 	}
-
-	body := airwallexPaymentLinkReq{
-		RequestID:       uuid.NewString(),
-		MerchantOrderID: req.OrderID,
-		Title:           title,
-		Amount:          amount,
-		Currency:        currency,
-		Metadata:        map[string]any{"orderId": req.OrderID},
-		Reusable:        false,
-		ReturnURL:       returnURL,
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return "", formatAirwallexAuthHTTPError(status, body)
 	}
-
-	var link airwallexPaymentLink
-	if err := a.apiRequest(ctx, http.MethodPost, "/api/v1/pa/payment_links/create", body, &link); err != nil {
-		return nil, fmt.Errorf("airwallex create payment: %w", err)
+	var resp airwallexAuthResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", fmt.Errorf("parse authentication response: %w", err)
 	}
-
-	return &payment.CreatePaymentResponse{
-		TradeNo: link.ID,
-		PayURL:  link.URL,
-	}, nil
+	if strings.TrimSpace(resp.Token) == "" {
+		return "", fmt.Errorf("authentication response missing token")
+	}
+	expiresAt, err := parseAirwallexTime(resp.ExpiresAt)
+	if err != nil {
+		expiresAt = time.Now().Add(25 * time.Minute)
+	}
+	state.token = resp.Token
+	state.expiresAt = expiresAt
+	return state.token, nil
 }
 
-// QueryOrder fetches a Payment Link and maps its status to provider status.
-// TradeNo is the payment_link.id returned by CreatePayment.
-func (a *Airwallex) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
-	if tradeNo == "" {
-		return nil, fmt.Errorf("airwallex query order: empty tradeNo")
+func formatAirwallexAuthHTTPError(status int, body []byte) error {
+	summary := summarizeAirwallexResponse(body)
+	if status == http.StatusUnauthorized || status == http.StatusForbidden {
+		return fmt.Errorf("authentication HTTP %d: %s; Airwallex credentials were rejected, check Client ID/API Key, API Base environment (sandbox: https://api-demo.airwallex.com/api/v1, production: https://api.airwallex.com/api/v1), and Account ID (leave it empty for single-account scoped keys)", status, summary)
 	}
-	var link airwallexPaymentLink
-	if err := a.apiRequest(ctx, http.MethodGet, "/api/v1/pa/payment_links/"+url.PathEscape(tradeNo), nil, &link); err != nil {
-		return nil, fmt.Errorf("airwallex query order: %w", err)
-	}
-
-	amt, _ := link.Amount.Float64()
-	return &payment.QueryOrderResponse{
-		TradeNo: link.ID,
-		Status:  mapAirwallexLinkStatus(link.Status, link.SuccessfulPaymentIntentCount),
-		Amount:  amt,
-	}, nil
+	return fmt.Errorf("authentication HTTP %d: %s", status, summary)
 }
 
-// mapAirwallexLinkStatus maps Payment Link status + paid count to provider status.
-// Link statuses observed: UNPAID, PAID, EXPIRED, INACTIVE.
-func mapAirwallexLinkStatus(status string, paidCount int) string {
-	if paidCount > 0 || status == "PAID" {
+func (a *Airwallex) tokenCacheKey() string {
+	sum := sha256.Sum256([]byte(a.config["apiKey"]))
+	return a.config["apiBase"] + "|" + a.config["clientId"] + "|" + strings.TrimSpace(a.config["accountId"]) + "|" + hex.EncodeToString(sum[:8])
+}
+
+func (a *Airwallex) doJSON(ctx context.Context, method, path, token string, payload any, out any) error {
+	var bodyReader io.Reader
+	if payload != nil {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		bodyReader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, a.config["apiBase"]+path, bodyReader)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	if accountID := strings.TrimSpace(a.config["accountId"]); accountID != "" {
+		req.Header.Set("x-on-behalf-of", accountID)
+	}
+
+	body, status, err := a.do(req)
+	if err != nil {
+		return err
+	}
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return fmt.Errorf("HTTP %d: %s", status, summarizeAirwallexResponse(body))
+	}
+	if out == nil || len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(body, out); err != nil {
+		return fmt.Errorf("parse response: %w", err)
+	}
+	return nil
+}
+
+func (a *Airwallex) do(req *http.Request) ([]byte, int, error) {
+	client := a.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: airwallexHTTPTimeout}
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, airwallexMaxResponseSize))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
+}
+
+func airwallexProviderStatus(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case airwallexPaymentStatusSucceeded:
 		return payment.ProviderStatusPaid
-	}
-	switch status {
-	case "EXPIRED", "INACTIVE":
+	case airwallexPaymentStatusCancelled:
 		return payment.ProviderStatusFailed
 	default:
 		return payment.ProviderStatusPending
 	}
 }
 
-// ── Webhook verification ─────────────────────────────────────────────────────
-
-// airwallexWebhookEvent is the parsed subset of an Airwallex webhook payload.
-type airwallexWebhookEvent struct {
-	Name string `json:"name"`
-	Data struct {
-		Object struct {
-			ID              string          `json:"id"`
-			MerchantOrderID string          `json:"merchant_order_id"`
-			Amount          decimal.Decimal `json:"amount"`
-			Status          string          `json:"status"`
-			Metadata        map[string]any  `json:"metadata"`
-		} `json:"object"`
-	} `json:"data"`
+func airwallexRefundProviderStatus(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case airwallexRefundStatusSettled:
+		return payment.ProviderStatusSuccess
+	case airwallexRefundStatusFailed:
+		return payment.ProviderStatusFailed
+	case airwallexRefundStatusReceived, airwallexRefundStatusAccepted:
+		return payment.ProviderStatusPending
+	default:
+		return payment.ProviderStatusPending
+	}
 }
 
-// verifyAirwallexSignature returns true if signature is a valid HMAC-SHA256
-// of `timestamp + rawBody` keyed with secret.
-func verifyAirwallexSignature(rawBody, signature, timestamp, secret string) bool {
-	if signature == "" || timestamp == "" || secret == "" {
-		return false
+func airwallexDeterministicRequestID(parts ...string) string {
+	hash := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	var id uuid.UUID
+	copy(id[:], hash[:16])
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	return id.String()
+}
+
+func verifyAirwallexWebhookSignature(rawBody string, headers map[string]string, secret string, now time.Time) error {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return fmt.Errorf("airwallex webhookSecret not configured")
 	}
+	timestamp := strings.TrimSpace(headers["x-timestamp"])
+	signature := strings.ToLower(strings.TrimSpace(headers["x-signature"]))
+	if timestamp == "" || signature == "" {
+		return fmt.Errorf("airwallex notification missing x-timestamp or x-signature header")
+	}
+
 	mac := hmac.New(sha256.New, []byte(secret))
-	// hash.Hash.Write never returns an error (documented contract).
 	_, _ = mac.Write([]byte(timestamp))
 	_, _ = mac.Write([]byte(rawBody))
 	expected := hex.EncodeToString(mac.Sum(nil))
-	// Constant-time comparison over equal-length slices.
-	return hmac.Equal([]byte(expected), []byte(signature))
-}
-
-// VerifyNotification verifies an Airwallex webhook callback and returns the
-// parsed PaymentNotification, or nil for irrelevant event types.
-func (a *Airwallex) VerifyNotification(_ context.Context, rawBody string, headers map[string]string) (*payment.PaymentNotification, error) {
-	secret := a.config["webhookSecret"]
-	if secret == "" {
-		return nil, fmt.Errorf("airwallex webhookSecret not configured")
+	if !hmac.Equal([]byte(expected), []byte(signature)) {
+		return fmt.Errorf("airwallex invalid signature")
 	}
 
-	signature := headers["x-signature"]
-	timestamp := headers["x-timestamp"]
-	if signature == "" || timestamp == "" {
-		return nil, fmt.Errorf("airwallex webhook missing x-signature or x-timestamp header")
-	}
-
-	if !verifyAirwallexSignature(rawBody, signature, timestamp, secret) {
-		return nil, fmt.Errorf("airwallex webhook signature verification failed")
-	}
-
-	var event airwallexWebhookEvent
-	if err := json.Unmarshal([]byte(rawBody), &event); err != nil {
-		return nil, fmt.Errorf("airwallex webhook: decode event: %w", err)
-	}
-
-	var status string
-	switch event.Name {
-	case airwallexEventSucceeded:
-		status = payment.ProviderStatusSuccess
-	case airwallexEventFailed, airwallexEventCancelled:
-		status = payment.ProviderStatusFailed
-	default:
-		// Irrelevant event — caller should ack with 200.
-		return nil, nil
-	}
-
-	pi := event.Data.Object
-	orderID := pi.MerchantOrderID
-	if md, ok := pi.Metadata["orderId"].(string); ok && md != "" {
-		orderID = md
-	}
-
-	amt, _ := pi.Amount.Float64()
-	return &payment.PaymentNotification{
-		TradeNo: pi.ID,
-		OrderID: orderID,
-		Amount:  amt,
-		Status:  status,
-		RawData: rawBody,
-	}, nil
-}
-
-// Refund creates a refund against the given PaymentIntent.
-func (a *Airwallex) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
-	amount, err := decimal.NewFromString(req.Amount)
+	ts, err := parseAirwallexWebhookTimestamp(timestamp)
 	if err != nil {
-		return nil, fmt.Errorf("airwallex refund: invalid amount %q: %w", req.Amount, err)
+		return err
 	}
-	if amount.Sign() <= 0 {
-		return nil, fmt.Errorf("airwallex refund: amount must be positive, got %q", req.Amount)
+	if now.IsZero() {
+		now = time.Now()
 	}
-
-	reason := req.Reason
-	if reason == "" {
-		reason = "Refund requested"
-	}
-
-	body := airwallexCreateRefundReq{
-		RequestID:       uuid.NewString(),
-		PaymentIntentID: req.TradeNo,
-		Amount:          amount,
-		Reason:          reason,
-	}
-
-	var refund airwallexRefund
-	if err := a.apiRequest(ctx, http.MethodPost, "/api/v1/pa/refunds/create", body, &refund); err != nil {
-		return nil, fmt.Errorf("airwallex refund: %w", err)
-	}
-
-	status := payment.ProviderStatusPending
-	if refund.Status == airwallexStatusSucceeded {
-		status = payment.ProviderStatusSuccess
-	}
-	return &payment.RefundResponse{
-		RefundID: refund.ID,
-		Status:   status,
-	}, nil
-}
-
-// CancelPayment disables the hosted Payment Link upstream so the URL can no
-// longer be paid. TradeNo is the payment_link.id returned by CreatePayment.
-// Safe to call repeatedly — Airwallex returns 200 on an already-disabled link.
-func (a *Airwallex) CancelPayment(ctx context.Context, tradeNo string) error {
-	if tradeNo == "" {
-		return fmt.Errorf("airwallex cancel: empty tradeNo")
-	}
-	path := "/api/v1/pa/payment_links/" + url.PathEscape(tradeNo) + "/disable"
-	if err := a.apiRequest(ctx, http.MethodPost, path, map[string]any{"request_id": uuid.NewString()}, nil); err != nil {
-		return fmt.Errorf("airwallex cancel: %w", err)
+	if diff := now.Sub(ts).Abs(); diff > airwallexWebhookTolerance {
+		return fmt.Errorf("airwallex webhook timestamp outside tolerance")
 	}
 	return nil
 }
 
-// Ensure interface compliance.
+func parseAirwallexWebhookTimestamp(raw string) (time.Time, error) {
+	ts, err := decimal.NewFromString(strings.TrimSpace(raw))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("airwallex invalid webhook timestamp")
+	}
+	millis := ts.IntPart()
+	if millis <= 0 {
+		return time.Time{}, fmt.Errorf("airwallex invalid webhook timestamp")
+	}
+	return time.UnixMilli(millis), nil
+}
+
+func parseAirwallexTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("empty time")
+	}
+	for _, layout := range []string{time.RFC3339, "2006-01-02T15:04:05-0700", "2006-01-02T15:04:05.000-0700"} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("invalid time: %s", raw)
+}
+
+func summarizeAirwallexResponse(body []byte) string {
+	summary := strings.Join(strings.Fields(string(body)), " ")
+	if summary == "" {
+		return "<empty>"
+	}
+	if len(summary) > airwallexMaxErrorSummary {
+		return summary[:airwallexMaxErrorSummary] + "..."
+	}
+	return summary
+}
+
+type airwallexAuthResponse struct {
+	Token     string `json:"token"`
+	ExpiresAt string `json:"expires_at"`
+}
+
+type airwallexCreatePaymentIntentRequest struct {
+	RequestID       string                 `json:"request_id"`
+	Amount          airwallexRequestAmount `json:"amount"`
+	Currency        string                 `json:"currency"`
+	MerchantOrderID string                 `json:"merchant_order_id"`
+	ReturnURL       string                 `json:"return_url,omitempty"`
+	Descriptor      string                 `json:"descriptor,omitempty"`
+	Metadata        map[string]string      `json:"metadata,omitempty"`
+}
+
+type airwallexCreateRefundRequest struct {
+	RequestID       string                 `json:"request_id"`
+	PaymentIntentID string                 `json:"payment_intent_id"`
+	Amount          airwallexRequestAmount `json:"amount,omitempty"`
+	Reason          string                 `json:"reason,omitempty"`
+}
+
+type airwallexRequestAmount struct {
+	decimal.Decimal
+}
+
+func newAirwallexRequestAmount(amount decimal.Decimal) airwallexRequestAmount {
+	return airwallexRequestAmount{Decimal: amount}
+}
+
+func (a airwallexRequestAmount) MarshalJSON() ([]byte, error) {
+	return []byte(a.String()), nil
+}
+
+func (a *airwallexRequestAmount) UnmarshalJSON(data []byte) error {
+	amount, err := decimal.NewFromString(strings.Trim(string(data), `"`))
+	if err != nil {
+		return err
+	}
+	a.Decimal = amount
+	return nil
+}
+
+type airwallexPaymentIntent struct {
+	ID              string            `json:"id"`
+	RequestID       string            `json:"request_id"`
+	ClientSecret    string            `json:"client_secret"`
+	MerchantOrderID string            `json:"merchant_order_id"`
+	Amount          decimal.Decimal   `json:"amount"`
+	Currency        string            `json:"currency"`
+	Status          string            `json:"status"`
+	Metadata        map[string]string `json:"metadata"`
+}
+
+type airwallexRefund struct {
+	ID              string          `json:"id"`
+	RequestID       string          `json:"request_id"`
+	PaymentIntentID string          `json:"payment_intent_id"`
+	Amount          decimal.Decimal `json:"amount"`
+	Currency        string          `json:"currency"`
+	Status          string          `json:"status"`
+}
+
+type airwallexWebhookEvent struct {
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	AccountID      string `json:"accountId"`
+	AccountIDSnake string `json:"account_id"`
+	Data           struct {
+		Object json.RawMessage `json:"object"`
+	} `json:"data"`
+}
+
+func (e airwallexWebhookEvent) accountID() string {
+	if accountID := strings.TrimSpace(e.AccountID); accountID != "" {
+		return accountID
+	}
+	return strings.TrimSpace(e.AccountIDSnake)
+}
+
 var (
-	_ payment.Provider           = (*Airwallex)(nil)
-	_ payment.CancelableProvider = (*Airwallex)(nil)
+	_ payment.Provider                 = (*Airwallex)(nil)
+	_ payment.CancelableProvider       = (*Airwallex)(nil)
+	_ payment.MerchantIdentityProvider = (*Airwallex)(nil)
 )

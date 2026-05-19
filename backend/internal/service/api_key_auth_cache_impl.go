@@ -21,10 +21,14 @@ import (
 // recover raw API keys, and closes CodeQL go/weak-sensitive-data-hashing.
 var apiKeyAuthCacheSalt = []byte("sub2api/apikey-auth-cache/v1")
 
-// v7 added UserGroupRPMOverride on user snapshot (downstream of #44 multi-platform groups).
-// v8 added group image generation controls (upstream).
-// v9 = both features merged at sync.
-const apiKeyAuthSnapshotVersion = 9
+// Snapshot version history (bump invalidates all cached auth snapshots):
+//
+//	v7  UserGroupRPMOverride on user snapshot (downstream #44 multi-platform groups)
+//	v8  group image generation controls (upstream)
+//	v9  used independently by both forks: downstream merged v7+v8; upstream
+//	    added the API Key name field for audit logs
+//	v10 upstream sync — downstream features + upstream API Key name combined
+const apiKeyAuthSnapshotVersion = 10
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int
@@ -224,6 +228,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 		APIKeyID:    apiKey.ID,
 		UserID:      apiKey.UserID,
 		GroupID:     apiKey.GroupID,
+		Name:        apiKey.Name,
 		Status:      apiKey.Status,
 		IPWhitelist: apiKey.IPWhitelist,
 		IPBlacklist: apiKey.IPBlacklist,
@@ -316,6 +321,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 		UserID:      snapshot.UserID,
 		GroupID:     snapshot.GroupID,
 		Key:         key,
+		Name:        snapshot.Name,
 		Status:      snapshot.Status,
 		IPWhitelist: snapshot.IPWhitelist,
 		IPBlacklist: snapshot.IPBlacklist,
