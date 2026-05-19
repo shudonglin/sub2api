@@ -1,4 +1,4 @@
-name: Build & publish edge image
+name: Build & publish image
 
 # On every merge to main, build the container image and push it to GHCR as
 # :latest. The Oracle VM (sub2api-infra) runs watchtower, which tracks :latest
@@ -60,4 +60,4 @@ jobs:
 
       - name: Summary
         run: |
-          echo "Pushed ${{ steps.img.outputs.image }}:edge (main-${{ steps.img.outputs.sha }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pushed ${{ steps.img.outputs.image }}:latest and :main-${{ steps.img.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"
