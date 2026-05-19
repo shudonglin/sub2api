@@ -1,0 +1,111 @@
+<h2>Prisma Postgres vs Supabase — Free Tier Comparison</h2>
+<p class="subtitle">For a payment system (sub2apipay) hosted from Singapore</p>
+
+<div class="section">
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px;">
+      <thead>
+        <tr style="border-bottom:2px solid #e2e8f0;">
+          <th style="text-align:left;padding:12px 16px;color:#64748b;font-size:12px;text-transform:uppercase;letter-spacing:0.05em;width:30%;">Feature</th>
+          <th style="text-align:center;padding:12px 16px;background:#f0fdf4;border-radius:8px 0 0 0;">
+            <div style="font-size:16px;font-weight:700;color:#059669;">Supabase</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px;">You're already using this</div>
+          </th>
+          <th style="text-align:center;padding:12px 16px;">
+            <div style="font-size:16px;font-weight:700;color:#7c3aed;">Prisma Postgres</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:2px;">Prisma's managed DB</div>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Price</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;font-weight:700;color:#059669;">$0/month</td>
+          <td style="text-align:center;padding:10px 16px;font-weight:700;color:#7c3aed;">$0/month</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Storage</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">500 MB</td>
+          <td style="text-align:center;padding:10px 16px;">500 MB</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Projects / DBs</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">2 projects</td>
+          <td style="text-align:center;padding:10px 16px;">5 databases</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Operations / Requests</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Unlimited queries</td>
+          <td style="text-align:center;padding:10px 16px;">100,000 ops/month<br><span style="font-size:11px;color:#ef4444;">⚠️ then hard-stopped</span></td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Direct Connections</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">~60 (shared compute)</td>
+          <td style="text-align:center;padding:10px 16px;">10</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Pooled Connections</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Supavisor (unlimited pooled)</td>
+          <td style="text-align:center;padding:10px 16px;">10</td>
+        </tr>
+        <tr style="border-bottom:2px solid #e2e8f0;background:#fffbeb;">
+          <td style="padding:12px 16px;font-weight:700;">🇸🇬 Singapore Region</td>
+          <td style="text-align:center;padding:12px 16px;background:#dcfce7;font-weight:700;color:#059669;font-size:18px;">✅ ap-southeast-1</td>
+          <td style="text-align:center;padding:12px 16px;color:#dc2626;font-weight:700;font-size:18px;">❌ US/EU only*</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Latency from SG</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;color:#059669;font-weight:600;">~5-10ms (local)</td>
+          <td style="text-align:center;padding:10px 16px;color:#dc2626;font-weight:600;">~150-250ms (cross-Pacific)</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Auth / Extras</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Auth, Storage, Edge Functions, Realtime</td>
+          <td style="text-align:center;padding:10px 16px;">Query Insights, Studio GUI</td>
+        </tr>
+        <tr style="border-bottom:1px solid #f1f5f9;">
+          <td style="padding:10px 16px;font-weight:600;">Paid Tier Starts At</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">$25/month (Pro)</td>
+          <td style="text-align:center;padding:10px 16px;">$10/month (Starter)</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 16px;font-weight:600;">Pause on Inactivity</td>
+          <td style="text-align:center;padding:10px 16px;background:#f0fdf4;">Yes (after 1 week inactive)</td>
+          <td style="text-align:center;padding:10px 16px;">No</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:12px;color:#94a3b8;">* Prisma Postgres regions couldn't be fully confirmed from docs — their infrastructure runs on bare metal/unikernels. Asia regions may exist but are not prominently listed.</p>
+</div>
+
+<h3>Verdict for your situation</h3>
+
+<div class="options">
+  <div class="option" data-choice="supabase" onclick="toggleSelect(this)" style="border-color:#059669;">
+    <div class="letter" style="background:#059669;">✓</div>
+    <div class="content">
+      <h3 style="color:#059669;">Stick with Supabase (Recommended)</h3>
+      <p><strong>You're already on it. Singapore region. Unlimited queries. Same DB for both apps.</strong></p>
+      <ul style="font-size:13px;margin-top:8px;color:#475569;">
+        <li>Zero migration work — just point sub2apipay's DATABASE_URL to your existing Supabase</li>
+        <li>5-10ms latency from your Singapore VM</li>
+        <li>No 100K ops/month cap on free tier</li>
+        <li>Payment orders need reliable, fast writes — local region matters</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="option" data-choice="prisma" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Switch to Prisma Postgres</h3>
+      <p><strong>Better if you were in US/EU and wanted tighter Prisma ORM integration</strong></p>
+      <ul style="font-size:13px;margin-top:8px;color:#475569;">
+        <li>100K ops/month limit is tight — a few hundred payment orders with audit logs could eat through it</li>
+        <li>150-250ms latency from Singapore to US/EU is painful for payment callbacks</li>
+        <li>Would need to migrate existing sub2api data or run two separate databases</li>
+      </ul>
+    </div>
+  </div>
+</div>

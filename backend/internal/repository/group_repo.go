@@ -8,13 +8,13 @@ import (
 	"sort"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	"github.com/Wei-Shaw/sub2api/ent/apikey"
-	"github.com/Wei-Shaw/sub2api/ent/group"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
-	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	dbent "github.com/shudonglin/sub2api/ent"
+	"github.com/shudonglin/sub2api/ent/apikey"
+	"github.com/shudonglin/sub2api/ent/group"
+	"github.com/shudonglin/sub2api/internal/pkg/logger"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/service"
 
 	entsql "entgo.io/ent/dialect/sql"
 )

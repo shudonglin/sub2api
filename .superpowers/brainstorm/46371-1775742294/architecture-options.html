@@ -1,0 +1,80 @@
+<h2>Architecture: Where does the landing page live?</h2>
+<p class="subtitle">You have 3 repos and 3 hosting targets. Here's how they fit together.</p>
+
+<div class="section">
+  <h3>Current State</h3>
+  <div class="mockup">
+    <div class="mockup-header">What You Have Today</div>
+    <div class="mockup-body" style="padding:24px;font-family:system-ui;">
+      <div style="display:flex;gap:24px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;border:2px solid #4f46e5;border-radius:12px;padding:16px;">
+          <div style="font-weight:700;color:#4f46e5;margin-bottom:8px;">📦 sub2api</div>
+          <div style="font-size:13px;color:#666;margin-bottom:12px;">Go + Vue 3</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">✅ API Gateway (Go backend)</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">✅ Admin Dashboard (Vue)</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;">✅ Basic Home Page (Vue)</div>
+          <div style="margin-top:10px;padding:8px;background:#fef3c7;border-radius:8px;font-size:12px;">🖥️ Hosted on: VM</div>
+        </div>
+        <div style="flex:1;min-width:220px;border:2px solid #059669;border-radius:12px;padding:16px;">
+          <div style="font-weight:700;color:#059669;margin-bottom:8px;">💳 sub2apipay</div>
+          <div style="font-size:13px;color:#666;margin-bottom:12px;">Next.js + Prisma</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">✅ Payment Gateway</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">✅ Admin Panel</div>
+          <div style="background:#f1f5f9;border-radius:8px;padding:10px;font-size:13px;">✅ Embedded via iframe</div>
+          <div style="margin-top:10px;padding:8px;background:#fef3c7;border-radius:8px;font-size:12px;">🖥️ Hosted on: VM</div>
+        </div>
+        <div style="flex:1;min-width:220px;border:2px dashed #dc2626;border-radius:12px;padding:16px;background:#fef2f2;">
+          <div style="font-weight:700;color:#dc2626;margin-bottom:8px;">🌐 Landing Page</div>
+          <div style="font-size:13px;color:#666;margin-bottom:12px;">??? — doesn't exist yet</div>
+          <div style="background:#fee2e2;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">❌ Public marketing site</div>
+          <div style="background:#fee2e2;border-radius:8px;padding:10px;font-size:13px;margin-bottom:6px;">❌ API docs / endpoints</div>
+          <div style="background:#fee2e2;border-radius:8px;padding:10px;font-size:13px;">❌ Pricing & getting started</div>
+          <div style="margin-top:10px;padding:8px;background:#fef3c7;border-radius:8px;font-size:12px;">☁️ Target: Cloudflare Pages</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h3>Pick an approach</h3>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>New Repo (Recommended)</h3>
+      <p><strong>3 repos, 3 concerns, 3 hosts</strong></p>
+      <p>Create a new repo (e.g. <code>sub2api-web</code>) with a static site framework (Astro, Next.js static, or plain HTML+Tailwind). Deploy to Cloudflare Pages. Each repo does one thing well.</p>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>Clean separation — landing page is pure marketing/docs</li><li>Deploys instantly on Cloudflare Pages (free, global CDN)</li><li>No impact on backend or payment repos</li><li>Can use any static framework</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>One more repo to manage</li><li>Need to keep API docs in sync manually</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Add to sub2apipay</h3>
+      <p><strong>Landing page as routes in the existing Next.js app</strong></p>
+      <p>Add <code>/</code>, <code>/docs</code>, <code>/pricing</code> routes to sub2apipay since it's already Next.js. Export static pages for Cloudflare, keep payment routes on VM.</p>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>No new repo</li><li>Shared codebase (styles, components)</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Mixes marketing with payment logic</li><li>Complicated deploy: static export for some routes, server for others</li><li>sub2apipay needs PostgreSQL — can't fully run on Cloudflare</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Add to sub2api (Vue)</h3>
+      <p><strong>Extend the existing Vue frontend with public pages</strong></p>
+      <p>Add landing/docs pages to the existing Vue frontend alongside the admin dashboard.</p>
+      <div class="pros-cons" style="margin-top:12px;">
+        <div class="pros"><h4>Pros</h4><ul><li>No new repo</li><li>Co-located with the API gateway</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Tied to the VM — can't use Cloudflare Pages</li><li>Vue frontend is designed as an admin SPA, not a public site</li><li>SEO challenges with SPA</li><li>Couples marketing to backend deploys</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>
