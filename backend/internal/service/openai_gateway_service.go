@@ -2489,9 +2489,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, err
 	}
 
-	// Capture upstream request body for ops retry of this attempt.
-	setOpsUpstreamRequestBody(c, body)
-
 	// 命中 WS 时仅走 WebSocket Mode；不再自动回退 HTTP。
 	if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
 		wsReqBody := reqBody
@@ -2764,7 +2761,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					if err != nil {
 						return nil, fmt.Errorf("serialize invalid_encrypted_content retry body: %w", err)
 					}
-					setOpsUpstreamRequestBody(c, body)
 					httpInvalidEncryptedContentRetryTried = true
 					logger.LegacyPrintf("service.openai_gateway", "[OpenAI] Retrying non-WSv2 request once after invalid_encrypted_content (account: %s)", account.Name)
 					continue
@@ -2802,6 +2798,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 		defer func() { _ = resp.Body.Close() }()
 
+		reasoningEffort := extractOpenAIReasoningEffort(reqBody, originalModel)
+		serviceTier := extractOpenAIServiceTier(reqBody)
+		releaseOpenAIParsedRequestBody(c)
+
 		// Handle normal response
 		var usage *OpenAIUsage
 		var firstTokenMs *int
@@ -2836,9 +2836,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if usage == nil {
 			usage = &OpenAIUsage{}
 		}
-
-		reasoningEffort := extractOpenAIReasoningEffort(reqBody, originalModel)
-		serviceTier := extractOpenAIServiceTier(reqBody)
 
 		forwardResult := &OpenAIForwardResult{
 			RequestID:       resp.Header.Get("x-request-id"),
@@ -3022,7 +3019,6 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		proxyURL = account.Proxy.URL()
 	}
 
-	setOpsUpstreamRequestBody(c, body)
 	if c != nil {
 		c.Set("openai_passthrough", true)
 	}
@@ -3061,6 +3057,8 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, s.handleErrorResponsePassthrough(ctx, resp, c, account, body)
 	}
 
+	serviceTier := extractOpenAIServiceTierFromBody(body)
+
 	var usage *OpenAIUsage
 	var firstTokenMs *int
 	imageCount := 0
@@ -3097,7 +3095,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		Usage:           *usage,
 		Model:           reqModel,
 		UpstreamModel:   upstreamPassthroughModel,
-		ServiceTier:     extractOpenAIServiceTierFromBody(body),
+		ServiceTier:     serviceTier,
 		ReasoningEffort: reasoningEffort,
 		Stream:          reqStream,
 		OpenAIWSMode:    false,
@@ -6519,6 +6517,13 @@ func getOpenAIRequestBodyMap(c *gin.Context, body []byte) (map[string]any, error
 		c.Set(OpenAIParsedRequestBodyKey, reqBody)
 	}
 	return reqBody, nil
+}
+
+func releaseOpenAIParsedRequestBody(c *gin.Context) {
+	if c == nil {
+		return
+	}
+	delete(c.Keys, OpenAIParsedRequestBodyKey)
 }
 
 func extractOpenAIReasoningEffort(reqBody map[string]any, requestedModel string) *string {
