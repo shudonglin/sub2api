@@ -6282,6 +6282,9 @@
               </div>
             </div>
           </div>
+
+          <EmailTemplateEditor />
+
           <!-- Balance Low Notification -->
           <div class="card">
             <div
@@ -6539,6 +6542,7 @@ import Toggle from "@/components/common/Toggle.vue";
 import ProxySelector from "@/components/common/ProxySelector.vue";
 import ImageUpload from "@/components/common/ImageUpload.vue";
 import BackupSettings from "@/views/admin/BackupView.vue";
+import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import { useClipboard } from "@/composables/useClipboard";
 import { affiliatesAPI, type AffiliateAdminEntry, type SimpleUser as AffiliateSimpleUser } from "@/api/admin/affiliates";
 import { extractApiErrorMessage, extractI18nErrorMessage } from "@/utils/apiError";
