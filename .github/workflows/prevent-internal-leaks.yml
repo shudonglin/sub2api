@@ -1,0 +1,36 @@
+name: Prevent internal-only paths
+
+# Belt-and-suspenders alongside .gitignore: `git add -f` can bypass
+# .gitignore, and that's exactly how customer PII ended up in this public
+# repo's history once. This job hard-fails any PR/push that has files
+# committed under directories meant to stay local-only.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - name: Reject committed internal-only paths
+        run: |
+          set -euo pipefail
+          # These directories are in .gitignore. Nothing under them should
+          # ever be tracked. If you have a legitimate need to commit
+          # something here, move it to a non-internal path instead.
+          PATTERN='^(\.superpowers|archive|\.context|\.gstack|\.claude|\.omx)(/|$)'
+          MATCHES=$(git ls-files | grep -E "$PATTERN" || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Internal-only paths are committed (they're in .gitignore):"
+            printf '  %s\n' $MATCHES
+            echo ""
+            echo "Likely committed via 'git add -f' — untrack with: git rm --cached <path>"
+            exit 1
+          fi
+          echo "OK: no tracked files under internal-only paths."
