@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/viper"
@@ -584,6 +585,11 @@ type SecurityConfig struct {
 	// database. If empty, credentials are stored in plaintext (legacy mode).
 	// Generate with: openssl rand -hex 32
 	CredentialEncryptionKey string `mapstructure:"credential_encryption_key"`
+	// TrustForwardedIPForAPIKeyACL controls whether the API Key ACL trusts the
+	// reverse-proxy-supplied client IP (X-Forwarded-For) rather than the direct
+	// socket peer. Upstream 08c8c67d.
+	TrustForwardedIPForAPIKeyACL     bool        `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
+	TrustForwardedIPForAPIKeyACLLive atomic.Bool `mapstructure:"-"`
 }
 
 type URLAllowlistConfig struct {
@@ -1478,6 +1484,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
 	cfg.Security.CSP.Policy = strings.TrimSpace(cfg.Security.CSP.Policy)
+	cfg.Security.TrustForwardedIPForAPIKeyACLLive.Store(cfg.Security.TrustForwardedIPForAPIKeyACL)
 	cfg.Log.Level = strings.ToLower(strings.TrimSpace(cfg.Log.Level))
 	cfg.Log.Format = strings.ToLower(strings.TrimSpace(cfg.Log.Format))
 	cfg.Log.ServiceName = strings.TrimSpace(cfg.Log.ServiceName)
@@ -1622,6 +1629,7 @@ func setDefaults() {
 	viper.SetDefault("security.csp.enabled", true)
 	viper.SetDefault("security.csp.policy", DefaultCSPPolicy)
 	viper.SetDefault("security.proxy_probe.insecure_skip_verify", false)
+	viper.SetDefault("security.trust_forwarded_ip_for_api_key_acl", false)
 
 	// Security - disable direct fallback on proxy error
 	viper.SetDefault("security.proxy_fallback.allow_direct_on_error", false)
