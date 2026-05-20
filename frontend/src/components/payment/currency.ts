@@ -16,6 +16,21 @@ function paymentCurrencyFractionDigits(currency: string): number {
   }
 }
 
+export function paymentCurrencySymbol(currency?: string | null, locale?: string): string {
+  const normalized = normalizePaymentCurrency(currency)
+  try {
+    const parts = new Intl.NumberFormat(locale || undefined, {
+      style: 'currency',
+      currency: normalized,
+      currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0)
+    const symbol = parts.find(p => p.type === 'currency')?.value
+    return symbol || normalized
+  } catch {
+    return normalized
+  }
+}
+
 export function formatPaymentAmount(amount: number, currency?: string | null, locale?: string): string {
   const normalized = normalizePaymentCurrency(currency)
   const fractionDigits = paymentCurrencyFractionDigits(normalized)
