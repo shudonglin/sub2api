@@ -28,6 +28,7 @@ import (
 	"github.com/shudonglin/sub2api/internal/pkg/apicompat"
 	"github.com/shudonglin/sub2api/internal/pkg/logger"
 	"github.com/shudonglin/sub2api/internal/pkg/openai"
+	"github.com/shudonglin/sub2api/internal/pkg/openai_compat"
 	"github.com/shudonglin/sub2api/internal/util/logredact"
 	"github.com/shudonglin/sub2api/internal/util/responseheaders"
 	"github.com/shudonglin/sub2api/internal/util/urlvalidator"
@@ -2034,6 +2035,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	originalBody := body
 	reqModel, reqStream, promptCacheKey := extractOpenAIRequestMetaFromBody(body)
 	originalModel := reqModel
+
+	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
+		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
+	}
+
 	compatMessagesBridge := isOpenAICompatMessagesBridgeBody(body)
 	setOpenAICompatMessagesBridgeContext(c, compatMessagesBridge)
 
