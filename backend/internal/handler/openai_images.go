@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -63,11 +62,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		return
 	}
 
-	if isMultipartImagesContentType(c.GetHeader("Content-Type")) {
-		setOpsRequestContext(c, "", false)
-	} else {
-		setOpsRequestContext(c, "", false)
-	}
+	setOpsRequestContext(c, "", false)
 
 	parsed, err := h.gatewayService.ParseOpenAIImagesRequest(c, body)
 	if err != nil {
@@ -98,11 +93,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		defer imageReleaseFunc()
 	}
 
-	if parsed.Multipart {
-		setOpsRequestContext(c, parsed.Model, parsed.Stream)
-	} else {
-		setOpsRequestContext(c, parsed.Model, parsed.Stream)
-	}
+	setOpsRequestContext(c, parsed.Model, parsed.Stream)
 	setOpsEndpointContext(c, "", int16(service.RequestTypeFromLegacy(parsed.Stream, false)))
 
 	channelMapping, _ := h.gatewayService.ResolveChannelMappingAndRestrict(c.Request.Context(), apiKey.GroupID, parsed.Model)
@@ -324,8 +315,4 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		)
 		return
 	}
-}
-
-func isMultipartImagesContentType(contentType string) bool {
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "multipart/form-data")
 }
