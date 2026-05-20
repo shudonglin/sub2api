@@ -29,9 +29,13 @@ func NewPaymentHandler(paymentService *service.PaymentService, configService *se
 // GetDashboard returns payment dashboard statistics.
 // GET /api/v1/admin/payment/dashboard
 func (h *PaymentHandler) GetDashboard(c *gin.Context) {
+	const maxDays = 366
 	days := 30
 	if d := c.Query("days"); d != "" {
 		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			if v > maxDays {
+				v = maxDays
+			}
 			days = v
 		}
 	}
