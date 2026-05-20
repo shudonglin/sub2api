@@ -78,12 +78,7 @@ func computeBasicStats(st *DashboardStats, orders []*dbent.PaymentOrder, todaySt
 const paymentStatsMaxDays = 3660
 
 func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) []DailyStats {
-	if days < 0 {
-		days = 0
-	}
-	if days > paymentStatsMaxDays {
-		days = paymentStatsMaxDays
-	}
+	boundedDays := max(0, min(days, paymentStatsMaxDays))
 	dailyMap := make(map[string]*DailyStats)
 	for _, o := range orders {
 		if o.PaidAt == nil {
@@ -98,8 +93,8 @@ func buildDailySeries(orders []*dbent.PaymentOrder, since time.Time, days int) [
 		ds.Amount += o.PayAmount
 		ds.Count++
 	}
-	series := make([]DailyStats, 0, days)
-	for i := 0; i < days; i++ {
+	series := make([]DailyStats, 0, boundedDays)
+	for i := 0; i < boundedDays; i++ {
 		date := since.AddDate(0, 0, i+1).Format("2006-01-02")
 		if ds, ok := dailyMap[date]; ok {
 			ds.Amount = math.Round(ds.Amount*100) / 100
