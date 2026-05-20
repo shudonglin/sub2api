@@ -139,9 +139,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			zap.String("compat_previous_response_id", truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen)),
 		)
 	}
-	if compatTurnState != "" {
-		logFields = append(logFields, zap.Bool("compat_turn_state_attached", true))
-	}
 	logger.L().Debug("openai messages: model mapping applied", logFields...)
 
 	// 4. Marshal Responses request body, then apply OAuth codex transform
