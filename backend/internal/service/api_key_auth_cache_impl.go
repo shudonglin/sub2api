@@ -28,7 +28,9 @@ var apiKeyAuthCacheSalt = []byte("sub2api/apikey-auth-cache/v1")
 //	v9  used independently by both forks: downstream merged v7+v8; upstream
 //	    added the API Key name field for audit logs
 //	v10 upstream sync — downstream features + upstream API Key name combined
-const apiKeyAuthSnapshotVersion = 10
+//	v11 upstream sync — reload snapshots for group availability checks
+//	    (disabled/deleted group blocks API Key, upstream 22ff1acd)
+const apiKeyAuthSnapshotVersion = 11
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

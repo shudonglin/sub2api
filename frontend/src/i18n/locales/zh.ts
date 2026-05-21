@@ -122,19 +122,23 @@ export default {
     dateRangeToday: '今日',
     dateRange7d: '7 天',
     dateRange30d: '30 天',
+    dateRange90d: '90 天',
     dateRangeCustom: '自定义',
     apply: '应用',
     used: '已使用',
     detailInfo: '详细信息',
     tokenStats: 'Token 统计',
+    dailyDetail: '按日明细',
     modelStats: '模型用量统计',
     // Table headers
+    date: '日期',
     model: '模型',
     requests: '请求数',
     inputTokens: '输入 Tokens',
     outputTokens: '输出 Tokens',
     cacheCreationTokens: '缓存创建',
     cacheReadTokens: '缓存读取',
+    cacheWriteTokens: '缓存写入',
     totalTokens: '总 Tokens',
     cost: '费用',
     // Status
@@ -178,6 +182,7 @@ export default {
     querySuccess: '查询成功',
     queryFailed: '查询失败',
     queryFailedRetry: '查询失败，请稍后重试',
+    noDailyUsage: '暂无按日用量数据',
   },
 
   // Setup Wizard
@@ -2449,6 +2454,8 @@ export default {
         webSearchEmulationGlobalDisabled: '请先在系统设置 → 网关 → Web Search 模拟中启用全局开关',
         codexImageGenerationBridge: 'Codex 图片生成桥接',
         codexImageGenerationBridgeHint: '开启后，OpenAI 分组的 Codex /responses 文本请求可能会被自动注入 image_generation 工具。仅在路由账号支持图片生成时开启。',
+        bedrockCCCompat: 'Bedrock CC 兼容',
+        bedrockCCCompatHint: '⚠️ 开启后，该渠道下 Bedrock 账号的请求将进行 Claude Code 兼容处理（thinking 类型转换、tool_use ID 清理）',
         basicSettings: '基础设置',
         addPlatform: '添加平台',
         noPlatforms: '点击"添加平台"开始配置渠道',
@@ -4276,6 +4283,7 @@ export default {
         status: '状态',
         usedBy: '使用者',
         usedAt: '使用时间',
+        expiresAt: '过期时间',
         createdAt: '创建时间',
         actions: '操作'
       },
@@ -4300,6 +4308,22 @@ export default {
       used: '已使用',
       searchCodes: '搜索兑换码或邮箱...',
       exportCsv: '导出 CSV',
+      batchUpdate: '批量修改',
+      batchUpdateTitle: '批量修改兑换码',
+      selectedCount: '已选择 {count} 个兑换码',
+      clearSelection: '清空选择',
+      selectCodesFirst: '请先选择兑换码',
+      noBatchFieldsSelected: '请至少勾选一个要修改的字段',
+      batchUpdateSuccess: '成功修改 {count} 个兑换码',
+      failedToBatchUpdate: '批量修改兑换码失败',
+      batchFields: {
+        status: '状态',
+        expiresAt: '过期时间',
+        notes: '备注',
+        group: '分组'
+      },
+      batchNotesPlaceholder: '输入新的备注，留空可清空备注',
+      clearGroup: '清空分组',
       deleteAllUnused: '删除全部未使用',
       deleteCodeConfirm: '确定要删除此兑换码吗？此操作无法撤销。',
       deleteAllUnusedConfirm: '确定要删除全部未使用的兑换码吗？此操作无法撤销。',
@@ -4325,6 +4349,12 @@ export default {
       selectGroup: '选择分组',
       selectGroupPlaceholder: '选择订阅分组',
       validityDays: '有效天数',
+      codeExpiry: '兑换码过期',
+      neverExpires: '永不过期',
+      expiryPresetDays: '{days} 天',
+      customExpiry: '自定义',
+      customExpiryDays: '自定义天数',
+      expiryDaysRequired: '请输入有效的过期天数',
       groupRequired: '请选择订阅分组',
       days: '天',
       status: {
@@ -5463,6 +5493,13 @@ export default {
         secretKeyHint: '服务端验证密钥（请保密）',
         secretKeyConfiguredHint: '密钥已配置，留空以保留当前值。'
       },
+      apiKeyAcl: {
+        title: 'API Key IP 访问控制',
+        description: '控制 API Key 白名单和黑名单使用哪个客户端 IP 判断',
+        trustForwardedIp: '信任反代传递的客户端 IP',
+        trustForwardedIpHint:
+          '默认关闭。仅在源站只允许 Cloudflare 或 Nginx 反代访问时开启；开启后 API Key IP 白/黑名单会使用 CF-Connecting-IP、X-Real-IP 或 X-Forwarded-For，与使用记录中的请求 IP 保持一致。'
+      },
       linuxdo: {
         title: 'LinuxDo Connect 登录',
         description: '配置 LinuxDo Connect OAuth，用于 KuaiAPI 用户登录',
@@ -5624,6 +5661,9 @@ export default {
         antigravityUserAgentVersion: 'Antigravity UA 版本',
         antigravityUserAgentVersionPlaceholder: '1.23.2',
         antigravityUserAgentVersionHint: '留空时使用 ANTIGRAVITY_USER_AGENT_VERSION 或内置默认值 1.23.2；填写后后台设置优先。',
+        openaiCodexUserAgent: 'OpenAI Codex UA',
+        openaiCodexUserAgentPlaceholder: 'codex-tui/0.125.0 (Ubuntu 22.4.0; x86_64) xterm-256color (codex-tui; 0.125.0)',
+        openaiCodexUserAgentHint: '用于规避 OpenAI 上游 Cloudflare 对浏览器 UA 的访问质询。仅在检测到客户端 User-Agent 为浏览器（Mozilla/...）时生效，其他客户端原样透传。留空使用内置默认值。',
       },
       webSearchEmulation: {
         title: 'Web Search 模拟',
