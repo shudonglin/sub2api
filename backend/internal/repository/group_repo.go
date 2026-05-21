@@ -10,7 +10,6 @@ import (
 
 	"github.com/lib/pq"
 	dbent "github.com/shudonglin/sub2api/ent"
-	"github.com/shudonglin/sub2api/ent/apikey"
 	"github.com/shudonglin/sub2api/ent/group"
 	"github.com/shudonglin/sub2api/internal/pkg/logger"
 	"github.com/shudonglin/sub2api/internal/pkg/pagination"

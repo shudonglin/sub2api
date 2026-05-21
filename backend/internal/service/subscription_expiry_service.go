@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/shudonglin/sub2api/internal/pkg/pagination"
 )
 
 // SubscriptionExpiryService periodically updates expired subscription status.
