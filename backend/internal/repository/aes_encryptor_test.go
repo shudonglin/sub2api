@@ -78,8 +78,8 @@ func TestNewAESEncryptor_MissingOrInvalidConfig(t *testing.T) {
 		wantContain string
 	}{
 		{"empty_key", "", "32 bytes"},
-		{"invalid_hex_odd_length", "abcde", "invalid totp encryption key"},
-		{"invalid_hex_chars", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "invalid totp encryption key"},
+		{"invalid_hex_odd_length", "abcde", "not valid hex"},
+		{"invalid_hex_chars", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", "not valid hex"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
