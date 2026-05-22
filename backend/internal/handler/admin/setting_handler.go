@@ -56,13 +56,14 @@ func firstNonEmpty(values ...string) string {
 
 // SettingHandler 系统设置处理器
 type SettingHandler struct {
-	settingService       *service.SettingService
-	emailService         *service.EmailService
-	turnstileService     *service.TurnstileService
-	opsService           *service.OpsService
-	paymentConfigService *service.PaymentConfigService
-	paymentService       *service.PaymentService
-	userAttributeService *service.UserAttributeService
+	settingService           *service.SettingService
+	emailService             *service.EmailService
+	turnstileService         *service.TurnstileService
+	opsService               *service.OpsService
+	paymentConfigService     *service.PaymentConfigService
+	paymentService           *service.PaymentService
+	userAttributeService     *service.UserAttributeService
+	notificationEmailService *service.NotificationEmailService
 }
 
 // NewSettingHandler 创建系统设置处理器
@@ -76,6 +77,12 @@ func NewSettingHandler(settingService *service.SettingService, emailService *ser
 		paymentService:       paymentService,
 		userAttributeService: userAttributeService,
 	}
+}
+
+// SetNotificationEmailService attaches the notification template service without changing
+// the constructor signature used by existing unit tests.
+func (h *SettingHandler) SetNotificationEmailService(notificationEmailService *service.NotificationEmailService) {
+	h.notificationEmailService = notificationEmailService
 }
 
 // GetSettings 获取所有系统设置
@@ -260,6 +267,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		BalanceLowNotifyEnabled:                settings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              settings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            settings.BalanceLowNotifyRechargeURL,
+		SubscriptionExpiryNotifyEnabled:        settings.SubscriptionExpiryNotifyEnabled,
 		AccountQuotaNotifyEnabled:              settings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:               dto.NotifyEmailEntriesFromService(settings.AccountQuotaNotifyEmails),
 		PaymentEnabled:                         paymentCfg.Enabled,
@@ -583,12 +591,13 @@ type UpdateSettingsRequest struct {
 	// OpenAI account scheduling
 	OpenAIAdvancedSchedulerEnabled *bool `json:"openai_advanced_scheduler_enabled"`
 
-	// Balance low notification
-	BalanceLowNotifyEnabled     *bool                   `json:"balance_low_notify_enabled"`
-	BalanceLowNotifyThreshold   *float64                `json:"balance_low_notify_threshold"`
-	BalanceLowNotifyRechargeURL *string                 `json:"balance_low_notify_recharge_url"`
-	AccountQuotaNotifyEnabled   *bool                   `json:"account_quota_notify_enabled"`
-	AccountQuotaNotifyEmails    *[]dto.NotifyEmailEntry `json:"account_quota_notify_emails"`
+	// 余额不足提醒
+	BalanceLowNotifyEnabled         *bool                   `json:"balance_low_notify_enabled"`
+	BalanceLowNotifyThreshold       *float64                `json:"balance_low_notify_threshold"`
+	BalanceLowNotifyRechargeURL     *string                 `json:"balance_low_notify_recharge_url"`
+	SubscriptionExpiryNotifyEnabled *bool                   `json:"subscription_expiry_notify_enabled"`
+	AccountQuotaNotifyEnabled       *bool                   `json:"account_quota_notify_enabled"`
+	AccountQuotaNotifyEmails        *[]dto.NotifyEmailEntry `json:"account_quota_notify_emails"`
 
 	// Payment configuration (integrated into settings, full replace)
 	PaymentEnabled                   *bool    `json:"payment_enabled"`
@@ -1688,6 +1697,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.BalanceLowNotifyRechargeURL
 		}(),
+		SubscriptionExpiryNotifyEnabled: func() bool {
+			if req.SubscriptionExpiryNotifyEnabled != nil {
+				return *req.SubscriptionExpiryNotifyEnabled
+			}
+			return previousSettings.SubscriptionExpiryNotifyEnabled
+		}(),
 		AccountQuotaNotifyEnabled: func() bool {
 			if req.AccountQuotaNotifyEnabled != nil {
 				return *req.AccountQuotaNotifyEnabled
@@ -2011,6 +2026,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		BalanceLowNotifyEnabled:                updatedSettings.BalanceLowNotifyEnabled,
 		BalanceLowNotifyThreshold:              updatedSettings.BalanceLowNotifyThreshold,
 		BalanceLowNotifyRechargeURL:            updatedSettings.BalanceLowNotifyRechargeURL,
+		SubscriptionExpiryNotifyEnabled:        updatedSettings.SubscriptionExpiryNotifyEnabled,
 		AccountQuotaNotifyEnabled:              updatedSettings.AccountQuotaNotifyEnabled,
 		AccountQuotaNotifyEmails:               dto.NotifyEmailEntriesFromService(updatedSettings.AccountQuotaNotifyEmails),
 		PaymentEnabled:                         updatedPaymentCfg.Enabled,
@@ -2485,7 +2501,7 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.OpenAIAdvancedSchedulerEnabled != after.OpenAIAdvancedSchedulerEnabled {
 		changed = append(changed, "openai_advanced_scheduler_enabled")
 	}
-	// Balance & quota notification
+	// 余额、订阅到期与账号限额通知
 	if before.BalanceLowNotifyEnabled != after.BalanceLowNotifyEnabled {
 		changed = append(changed, "balance_low_notify_enabled")
 	}
@@ -2494,6 +2510,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.BalanceLowNotifyRechargeURL != after.BalanceLowNotifyRechargeURL {
 		changed = append(changed, "balance_low_notify_recharge_url")
+	}
+	if before.SubscriptionExpiryNotifyEnabled != after.SubscriptionExpiryNotifyEnabled {
+		changed = append(changed, "subscription_expiry_notify_enabled")
 	}
 	if before.AccountQuotaNotifyEnabled != after.AccountQuotaNotifyEnabled {
 		changed = append(changed, "account_quota_notify_enabled")
@@ -3397,4 +3416,163 @@ func (h *SettingHandler) ensureUserAttributeDefinition(ctx context.Context, key,
 		return
 	}
 	slog.Info("dingtalk: created user attribute definition", "key", key, "name", name, "type", attrType)
+}
+
+// ListEmailTemplates returns all editable notification email templates.
+// GET /api/v1/admin/settings/email-templates
+func (h *SettingHandler) ListEmailTemplates(c *gin.Context) {
+	if h.notificationEmailService == nil {
+		response.InternalError(c, "notification email service is not configured")
+		return
+	}
+	events := h.notificationEmailService.ListEventInfos()
+	templates, err := h.notificationEmailService.ListTemplates(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, dto.EmailTemplateListResponse{
+		Events:       emailTemplateEventOptionsToDTO(events),
+		Locales:      h.notificationEmailService.SupportedLocales(),
+		Templates:    emailTemplateSummariesToDTO(templates),
+		Placeholders: emailTemplatePlaceholderUnion(events),
+	})
+}
+
+// GetEmailTemplate returns one editable notification email template.
+// GET /api/v1/admin/settings/email-templates/:event/:locale
+func (h *SettingHandler) GetEmailTemplate(c *gin.Context) {
+	if h.notificationEmailService == nil {
+		response.InternalError(c, "notification email service is not configured")
+		return
+	}
+	tmpl, err := h.notificationEmailService.GetTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, emailTemplateDetailToDTO(tmpl))
+}
+
+// UpdateEmailTemplate saves an override for one event/locale template.
+// PUT /api/v1/admin/settings/email-templates/:event/:locale
+func (h *SettingHandler) UpdateEmailTemplate(c *gin.Context) {
+	if h.notificationEmailService == nil {
+		response.InternalError(c, "notification email service is not configured")
+		return
+	}
+	var req dto.UpdateEmailTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	tmpl, err := h.notificationEmailService.UpdateTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"), req.Subject, req.HTML)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, emailTemplateDetailToDTO(tmpl))
+}
+
+// RestoreOfficialEmailTemplate removes an override and returns the built-in template.
+// POST /api/v1/admin/settings/email-templates/:event/:locale/restore-official
+func (h *SettingHandler) RestoreOfficialEmailTemplate(c *gin.Context) {
+	if h.notificationEmailService == nil {
+		response.InternalError(c, "notification email service is not configured")
+		return
+	}
+	tmpl, err := h.notificationEmailService.RestoreOfficialTemplate(c.Request.Context(), c.Param("event"), c.Param("locale"))
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, emailTemplateDetailToDTO(tmpl))
+}
+
+// PreviewEmailTemplate renders a template with safe sample variables without saving it.
+// POST /api/v1/admin/settings/email-templates/preview
+func (h *SettingHandler) PreviewEmailTemplate(c *gin.Context) {
+	if h.notificationEmailService == nil {
+		response.InternalError(c, "notification email service is not configured")
+		return
+	}
+	var req dto.PreviewEmailTemplateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	preview, err := h.notificationEmailService.PreviewTemplate(c.Request.Context(), service.NotificationEmailPreviewInput{
+		Event:     req.Event,
+		Locale:    req.Locale,
+		Subject:   req.Subject,
+		HTML:      req.HTML,
+		Variables: req.Variables,
+	})
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	response.Success(c, dto.EmailTemplatePreviewResponse{Subject: preview.Subject, HTML: preview.HTML})
+}
+
+func emailTemplateEventOptionsToDTO(events []service.NotificationEmailEventInfo) []dto.EmailTemplateEventOption {
+	items := make([]dto.EmailTemplateEventOption, 0, len(events))
+	for _, event := range events {
+		items = append(items, dto.EmailTemplateEventOption{
+			Value:       event.Event,
+			Label:       event.Label,
+			Description: event.Description,
+			Category:    event.Category,
+			Optional:    event.Optional,
+		})
+	}
+	return items
+}
+
+func emailTemplateSummariesToDTO(templates []service.NotificationEmailTemplate) []dto.EmailTemplateSummary {
+	items := make([]dto.EmailTemplateSummary, 0, len(templates))
+	for _, tmpl := range templates {
+		items = append(items, dto.EmailTemplateSummary{
+			Event:     tmpl.Event,
+			Locale:    tmpl.Locale,
+			Subject:   tmpl.Subject,
+			IsCustom:  tmpl.IsCustom,
+			UpdatedAt: emailTemplateUpdatedAt(tmpl),
+		})
+	}
+	return items
+}
+
+func emailTemplateDetailToDTO(tmpl service.NotificationEmailTemplate) dto.EmailTemplateDetail {
+	return dto.EmailTemplateDetail{
+		Event:        tmpl.Event,
+		Locale:       tmpl.Locale,
+		Subject:      tmpl.Subject,
+		HTML:         tmpl.HTML,
+		IsCustom:     tmpl.IsCustom,
+		UpdatedAt:    emailTemplateUpdatedAt(tmpl),
+		Placeholders: tmpl.Placeholders,
+	}
+}
+
+func emailTemplateUpdatedAt(tmpl service.NotificationEmailTemplate) string {
+	if tmpl.UpdatedAt == nil {
+		return ""
+	}
+	return tmpl.UpdatedAt.Format("2006-01-02T15:04:05Z07:00")
+}
+
+func emailTemplatePlaceholderUnion(events []service.NotificationEmailEventInfo) []string {
+	seen := make(map[string]struct{})
+	placeholders := make([]string, 0)
+	for _, event := range events {
+		for _, placeholder := range event.Placeholders {
+			if _, ok := seen[placeholder]; ok {
+				continue
+			}
+			seen[placeholder] = struct{}{}
+			placeholders = append(placeholders, placeholder)
+		}
+	}
+	return placeholders
 }
