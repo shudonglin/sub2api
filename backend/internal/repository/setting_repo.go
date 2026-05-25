@@ -15,19 +15,29 @@ import (
 
 // settingCacheTTL is the freshness window for the in-process settings cache.
 // Settings change rarely (operator action via admin UI / SetMultiple migration),
-// and stale reads for a few seconds are harmless across the codebase — but
+// and stale reads for a few minutes are harmless across the codebase — but
 // every uncached lookup was crossing the network to the database. On a
 // modestly-deployed instance this layer was driving 70+ qps against Supabase
-// (≈99.5% of them returning zero rows because the lookup was for a missing
-// optional key); the cache, with negative-result caching, collapses that to
-// effectively zero steady-state qps.
+// even with a 30s cache, because almost every lookup was for a key that
+// didn't exist and the negative cache was getting churned by a hot path.
 //
-// 30s is a deliberate trade-off: short enough that operator-driven setting
-// flips propagate within a normal page reload, long enough to absorb hot
-// loops (alert evaluator, gateway hot path, prometheus scrape side-effects)
-// without ever re-issuing the query. Write paths (Set / SetMultiple / Delete)
-// invalidate immediately so explicit updates are not subject to TTL.
-const settingCacheTTL = 30 * time.Second
+// 5 minutes is the right trade-off:
+//   - operator-driven changes still propagate within a single page reload
+//     (writes through Set / SetMultiple refresh the cache immediately, so
+//     this TTL only affects propagation between processes — which doesn't
+//     apply on a single-instance deployment)
+//   - long enough that *any* periodic loop (per-second, per-minute) sees
+//     a steady-state cache hit
+//   - combined with the proactive whole-table prewarm below, the
+//     steady-state DB qps for settings drops to ~1 query per 5 minutes
+//     regardless of the lookup pattern.
+const settingCacheTTL = 5 * time.Minute
+
+// settingPrewarmInterval drives the background refresh that proactively
+// pulls every settings row into the cache. Set slightly below settingCacheTTL
+// so existing positive entries are always refreshed before they expire,
+// keeping the cache permanently warm for known keys.
+const settingPrewarmInterval = 4 * time.Minute
 
 // settingCacheEntry holds either a hit (`value` populated, `missing=false`)
 // or a negative cache marker (`missing=true`). Negative caching is essential
@@ -45,12 +55,21 @@ type settingRepository struct {
 	cacheMu sync.RWMutex
 	cache   map[string]settingCacheEntry
 
+	// warmed is set to true once the first GetAll prewarm completes
+	// successfully. While true, the cache is treated as a complete snapshot:
+	// any single-key lookup for a key absent from the cache is answered
+	// negative immediately without a DB round-trip. The next periodic GetAll
+	// will pick up any new keys written by other processes (or, on this
+	// single-instance deployment, will simply re-confirm the snapshot).
+	warmed atomic.Bool
+
 	// Diagnostic counters. Temporary — exists to find a 31 qps SELECT-settings
 	// driver that survived the cache. Logged once a minute via the stats logger
 	// started in NewSettingRepository.
 	statHitPositive atomic.Uint64
 	statHitNegative atomic.Uint64
 	statMiss        atomic.Uint64
+	statSnapshotHit atomic.Uint64
 
 	// missCountMu protects missByKey + missKeysSinceFlush.
 	// We track *unique* missing keys with counts so the log line tells us
@@ -67,8 +86,69 @@ func NewSettingRepository(client *ent.Client) service.SettingRepository {
 		cache:     make(map[string]settingCacheEntry, 64),
 		missByKey: make(map[string]uint64, 64),
 	}
+	// Run an initial prewarm synchronously-ish (with a short timeout) so the
+	// first reads after process start already hit the snapshot. Failure is
+	// non-fatal — the cache falls back to per-key fills until the periodic
+	// prewarm succeeds.
+	go r.runPrewarmer()
 	go r.runStatsLogger()
 	return r
+}
+
+// runPrewarmer pulls the entire settings table into the cache, then refreshes
+// on settingPrewarmInterval. One DB query per refresh, regardless of how many
+// unique keys callers ask for. Combined with the snapshot semantics below
+// (warmed=true → missing keys answered without DB), this caps the
+// steady-state DB qps for this repo at roughly 1 / settingPrewarmInterval.
+func (r *settingRepository) runPrewarmer() {
+	// First prewarm runs immediately; subsequent ones on the ticker.
+	r.prewarmOnce()
+	t := time.NewTicker(settingPrewarmInterval)
+	defer t.Stop()
+	for range t.C {
+		r.prewarmOnce()
+	}
+}
+
+func (r *settingRepository) prewarmOnce() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	settings, err := r.client.Setting.Query().All(ctx)
+	if err != nil {
+		slog.Warn("setting_cache_prewarm_failed", "error", err.Error())
+		return
+	}
+	exp := time.Now().Add(settingCacheTTL)
+	next := make(map[string]settingCacheEntry, len(settings)+8)
+	for _, s := range settings {
+		next[s.Key] = settingCacheEntry{value: s.Value, expiresAt: exp}
+	}
+	// Atomic swap of the snapshot. Doing it under the write lock so concurrent
+	// reads see either the old map or the new one, not a half-built state.
+	// We deliberately do NOT carry over negative entries from the previous
+	// snapshot: if a key was missing 5 minutes ago and we re-checked just now,
+	// it's still missing — but a caller might have legitimately written it in
+	// between via Set/SetMultiple, which already populated the (old) cache,
+	// and we'd be stomping that fresh write. To avoid the stomp, we merge:
+	// keep any cache entry that was written more recently than this prewarm
+	// started.
+	prewarmStart := time.Now().Add(-10 * time.Second)
+	r.cacheMu.Lock()
+	for k, prev := range r.cache {
+		if _, fromSnapshot := next[k]; fromSnapshot {
+			continue
+		}
+		// Carry over recent writes (positive or negative) that won't be in the
+		// new snapshot. Older negative entries are dropped — the snapshot is
+		// now authoritative.
+		if !prev.missing && prev.expiresAt.After(prewarmStart.Add(settingCacheTTL/2)) {
+			next[k] = prev
+		}
+	}
+	r.cache = next
+	r.cacheMu.Unlock()
+	r.warmed.Store(true)
+	slog.Debug("setting_cache_prewarmed", "keys", len(settings))
 }
 
 // runStatsLogger emits one slog line per minute summarizing cache effectiveness
@@ -185,6 +265,21 @@ func (r *settingRepository) Get(ctx context.Context, key string) (*service.Setti
 		return &service.Setting{Key: key, Value: e.value}, nil
 	}
 
+	// Snapshot fast-path: once the prewarm has succeeded, the cache is
+	// authoritative. Any key not in the snapshot is treated as missing without
+	// a DB round-trip. This is the lever that takes the "lookup for a key
+	// that doesn't exist" pattern from O(callers per second) DB queries down
+	// to zero between snapshot refreshes. Write paths (Set / SetMultiple)
+	// add positive entries directly, and Delete leaves a negative one, so
+	// admin-driven changes are reflected immediately.
+	if r.warmed.Load() {
+		r.statHitNegative.Add(1)
+		// Plant a negative cache entry so we don't even need to take the
+		// `warmed` branch on the next call for this key.
+		r.cacheStore(key, settingCacheEntry{missing: true, expiresAt: time.Now().Add(settingCacheTTL)})
+		return nil, service.ErrSettingNotFound
+	}
+
 	r.recordMiss(key)
 
 	m, err := r.client.Setting.Query().Where(setting.KeyEQ(key)).Only(ctx)
@@ -236,6 +331,31 @@ func (r *settingRepository) GetMultiple(ctx context.Context, keys []string) (map
 	if len(keys) == 0 {
 		return map[string]string{}, nil
 	}
+
+	// Snapshot fast-path: once warmed, the per-key cache has the answer for
+	// every existing key (planted by the prewarm) and "missing" is implied for
+	// absent keys. Serve entirely from memory.
+	if r.warmed.Load() {
+		result := make(map[string]string, len(keys))
+		exp := time.Now().Add(settingCacheTTL)
+		r.cacheMu.Lock()
+		for _, k := range keys {
+			if e, ok := r.cache[k]; ok && !e.missing && time.Now().Before(e.expiresAt) {
+				result[k] = e.value
+				r.statHitPositive.Add(1)
+			} else if ok && e.missing {
+				r.statHitNegative.Add(1)
+			} else {
+				// Not in snapshot → plant negative entry, count as a "snapshot
+				// served" negative hit (not a DB miss).
+				r.cache[k] = settingCacheEntry{missing: true, expiresAt: exp}
+				r.statHitNegative.Add(1)
+			}
+		}
+		r.cacheMu.Unlock()
+		return result, nil
+	}
+
 	settings, err := r.client.Setting.Query().Where(setting.KeyIn(keys...)).All(ctx)
 	if err != nil {
 		return nil, err
