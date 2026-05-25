@@ -32,8 +32,9 @@ func newSettingRepoSQLite(t *testing.T) (*settingRepository, *dbent.Client) {
 	t.Cleanup(func() { _ = client.Close() })
 
 	return &settingRepository{
-		client: client,
-		cache:  make(map[string]settingCacheEntry, 8),
+		client:    client,
+		cache:     make(map[string]settingCacheEntry, 8),
+		missByKey: make(map[string]uint64, 8),
 	}, client
 }
 
