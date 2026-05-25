@@ -18,7 +18,7 @@
     "@airwallex/components-sdk": "^1.30.2",
     "@e965/xlsx": "^0.20.3",
     "@lobehub/icons": "^4.0.2",
-    "@stripe/stripe-js": "^9.5.0",
+    "@stripe/stripe-js": "^9.6.0",
     "@tanstack/vue-virtual": "^3.13.23",
     "@vueuse/core": "^10.7.0",
     "axios": "^1.16.0",
