@@ -32,7 +32,7 @@ require (
 	github.com/smartwalle/alipay/v3 v3.2.29
 	github.com/spf13/viper v1.18.2
 	github.com/stretchr/testify v1.11.1
-	github.com/stripe/stripe-go/v85 v85.0.0
+	github.com/stripe/stripe-go/v85 v85.1.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.42.0
 	github.com/testcontainers/testcontainers-go/modules/redis v0.40.0
 	github.com/tidwall/gjson v1.18.0
