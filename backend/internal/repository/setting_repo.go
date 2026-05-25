@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"log/slog"
+	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shudonglin/sub2api/ent"
@@ -41,13 +44,100 @@ type settingRepository struct {
 
 	cacheMu sync.RWMutex
 	cache   map[string]settingCacheEntry
+
+	// Diagnostic counters. Temporary — exists to find a 31 qps SELECT-settings
+	// driver that survived the cache. Logged once a minute via the stats logger
+	// started in NewSettingRepository.
+	statHitPositive atomic.Uint64
+	statHitNegative atomic.Uint64
+	statMiss        atomic.Uint64
+
+	// missCountMu protects missByKey + missKeysSinceFlush.
+	// We track *unique* missing keys with counts so the log line tells us
+	// whether 30 qps is 30 unique keys/sec (cardinality bomb) or 1 key being
+	// re-queried by callers that bypass the cache somehow.
+	missCountMu        sync.Mutex
+	missByKey          map[string]uint64
+	missKeysSinceFlush int
 }
 
 func NewSettingRepository(client *ent.Client) service.SettingRepository {
-	return &settingRepository{
-		client: client,
-		cache:  make(map[string]settingCacheEntry, 64),
+	r := &settingRepository{
+		client:    client,
+		cache:     make(map[string]settingCacheEntry, 64),
+		missByKey: make(map[string]uint64, 64),
 	}
+	go r.runStatsLogger()
+	return r
+}
+
+// runStatsLogger emits one slog line per minute summarizing cache effectiveness
+// and the top missing keys observed. Removed once the source of the residual
+// query rate is identified.
+func (r *settingRepository) runStatsLogger() {
+	t := time.NewTicker(60 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		hp := r.statHitPositive.Swap(0)
+		hn := r.statHitNegative.Swap(0)
+		ms := r.statMiss.Swap(0)
+
+		r.missCountMu.Lock()
+		topKeys := make([]string, 0, len(r.missByKey))
+		for k, c := range r.missByKey {
+			topKeys = append(topKeys, k+"="+fmtUint(c))
+		}
+		sort.Strings(topKeys) // deterministic ordering; counts embedded
+		uniqueMissKeys := len(r.missByKey)
+		r.missByKey = make(map[string]uint64, 64)
+		r.missKeysSinceFlush = 0
+		r.missCountMu.Unlock()
+
+		// Cap the logged key list so we don't blow out a log line on
+		// pathological cardinality.
+		shown := topKeys
+		if len(shown) > 30 {
+			shown = shown[:30]
+		}
+		slog.Info("setting_cache_stats",
+			"hits_positive", hp,
+			"hits_negative", hn,
+			"misses", ms,
+			"unique_miss_keys", uniqueMissKeys,
+			"total_calls", hp+hn+ms,
+			"top_miss_keys", shown,
+		)
+	}
+}
+
+func fmtUint(n uint64) string {
+	// Avoid importing strconv just for this; keep this file's import surface tight.
+	if n == 0 {
+		return "0"
+	}
+	var buf [20]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
+}
+
+func (r *settingRepository) recordMiss(key string) {
+	r.statMiss.Add(1)
+	r.missCountMu.Lock()
+	// Bound memory: if we've already tracked 500 unique missing keys this
+	// minute, stop adding new ones — the count is what matters, not exhaustive
+	// enumeration.
+	if _, ok := r.missByKey[key]; ok || r.missKeysSinceFlush < 500 {
+		if _, ok := r.missByKey[key]; !ok {
+			r.missKeysSinceFlush++
+		}
+		r.missByKey[key]++
+	}
+	r.missCountMu.Unlock()
 }
 
 // cacheLoad returns (entry, true) if a fresh entry exists, otherwise zero, false.
@@ -85,13 +175,17 @@ func (r *settingRepository) cacheInvalidate(keys ...string) {
 func (r *settingRepository) Get(ctx context.Context, key string) (*service.Setting, error) {
 	if e, ok := r.cacheLoad(key); ok {
 		if e.missing {
+			r.statHitNegative.Add(1)
 			return nil, service.ErrSettingNotFound
 		}
+		r.statHitPositive.Add(1)
 		// We don't cache the row's UpdatedAt because the cache's primary purpose
 		// is collapsing the hot read path; the only caller that needs UpdatedAt
 		// is admin tooling, which can tolerate a TTL-bounded delay.
 		return &service.Setting{Key: key, Value: e.value}, nil
 	}
+
+	r.recordMiss(key)
 
 	m, err := r.client.Setting.Query().Where(setting.KeyEQ(key)).Only(ctx)
 	if err != nil {
